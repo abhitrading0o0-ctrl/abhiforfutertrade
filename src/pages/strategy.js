@@ -35,7 +35,7 @@ export function renderStrategy(state) {
       <div class="control-group">
         <span class="control-label">Timeframe</span>
         <select class="control-select">
-          ${['5m', '15m', '1H', '4H', '1D'].map(tf =>
+          ${['1M', '5m', '15m', '1H', '4H', '1D'].map(tf =>
     `<option ${tf === state.timeframe ? 'selected' : ''}>${tf}</option>`
   ).join('')}
         </select>

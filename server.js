@@ -18,6 +18,7 @@ import { createServer } from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getHealthStatus, getMarketState } from './netlify/functions/next-candle-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1598,7 +1599,10 @@ class ForexComProvider extends MarketDataProvider {
     if (!cfg || cfg.marketType !== 'FOREX') return;
     this.activeSymbols.add(symbol);
 
-    if (DATA_MODE === 'MOCK' || !this.isConfigured()) {
+    if (this.isConfigured()) {
+      // Assuming Forex.com uses mock tick engine for now or has actual polling logic
+      // It currently has no polling logic in the source, so we do nothing if configured
+    } else if (DATA_MODE === 'MOCK') {
       this._startMockTickEngine(symbol);
     }
   }
@@ -2742,6 +2746,28 @@ const httpServer = createServer((req, res) => {
       switchHistory: forexManager.getSwitchHistory(),
     }));
     return;
+  }
+
+  if (req.url.startsWith('/api/next-candle/')) {
+    const parsedUrl = new URL(req.url, 'http://localhost:3001');
+    const params = Object.fromEntries(parsedUrl.searchParams.entries());
+    const symbol = params.symbol || params.instrument || 'EUR/USD';
+    const timeframe = params.timeframe || params.tf || '1M';
+    const count = parseInt(params.count || '120', 10);
+
+    if (parsedUrl.pathname.endsWith('/health')) {
+      getHealthStatus(symbol).then(health => res.end(JSON.stringify(health))).catch(e => {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: e.message }));
+      });
+      return;
+    } else if (parsedUrl.pathname.endsWith('/market')) {
+      getMarketState({ symbol, timeframe, count }).then(market => res.end(JSON.stringify(market))).catch(e => {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: e.message }));
+      });
+      return;
+    }
   }
 
   res.end(JSON.stringify({

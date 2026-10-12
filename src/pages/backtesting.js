@@ -44,19 +44,44 @@ export function renderBacktesting(state) {
           <div class="control-group" style="flex-direction:column;align-items:flex-start;gap:4px;">
             <span class="control-label">Strategy</span>
             <select class="control-select" style="width:100%;">
-              <option>EMA Crossover (9/21)</option>
-              <option>RSI Reversal</option>
-              <option>MACD Crossover</option>
-              <option>Bollinger Squeeze</option>
-              <option>VWAP Reclaim</option>
-              <option>Multi-Indicator Confluence</option>
+              <optgroup label="Legacy Strategies">
+                <option>EMA Crossover (9/21)</option>
+                <option>RSI Reversal</option>
+                <option>MACD Crossover</option>
+                <option>Bollinger Squeeze</option>
+                <option>VWAP Reclaim</option>
+                <option>Multi-Indicator Confluence</option>
+              </optgroup>
+              <optgroup label="M1 Scalping Strategies">
+                <option>M1 First Pullback Continuation</option>
+                <option>M1 Micro-Range Breakout</option>
+                <option>M1 Breakout-Retest</option>
+                <option>M1 False-Breakout Reversal</option>
+                <option>M1 Liquidity Sweep and Reclaim</option>
+                <option>M1 Order-Block Retest</option>
+                <option>M1 Support/Resistance Rejection</option>
+                <option>M1 Fast EMA Reclaim</option>
+                <option>M1 Momentum Burst</option>
+                <option>M1 Three-Candle Pressure</option>
+                <option>M1 Compression Expansion</option>
+                <option>M1 Range-Boundary Reversal</option>
+                <option>M1 Momentum Exhaustion Reversal</option>
+                <option>M1 Structure Flip and Retest</option>
+                <option>M1 Session Micro-Range Breakout</option>
+                <option>M1 ATR-Normalized Impulse</option>
+                <option>M1 Inside-Bar Breakout</option>
+                <option>M1 Engulfing at Key Levels</option>
+                <option>M1 Consecutive Rejection Reversal</option>
+                <option>M1 Micro-Trend Continuation</option>
+                <option>M1 Adaptive First-Move Engine (AFME)</option>
+              </optgroup>
             </select>
           </div>
           <div class="control-group" style="flex-direction:column;align-items:flex-start;gap:4px;">
             <span class="control-label">Timeframe</span>
             <select class="control-select" style="width:100%;">
-              ${['5m','15m','1H','4H','1D'].map(tf =>
-                `<option ${tf === '1D' ? 'selected' : ''}>${tf}</option>`
+              ${['1M', '2M', '3M', '5m', '15m', '1H', '4H', '1D'].map(tf =>
+                `<option ${tf === '1M' ? 'selected' : ''}>${tf}</option>`
               ).join('')}
             </select>
           </div>

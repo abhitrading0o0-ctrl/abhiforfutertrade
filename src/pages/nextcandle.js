@@ -13,7 +13,8 @@
 // 10. Clean pair and timeframe switching lifecycles
 // ============================================================
 
-import { marketDataClient } from '../marketDataClient.js';
+import { marketDataClient } from '../nextCandleClient.js';
+import { calculateTechnicalIndicators, evaluateTradingStrategies, generateNextCandlePrediction } from '../predictionEngine.js';
 import { createChart, CandlestickSeries, LineSeries, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
 
 // ============================================================
@@ -148,9 +149,9 @@ export function renderNextCandle(appState) {
         <div class="nc-clock-item"><span class="nc-clock-label">LOCAL</span><span class="nc-clock-value mono" id="ncLocalTime">--:--:--</span></div>
         <div class="nc-clock-item"><span class="nc-clock-label">UTC</span><span class="nc-clock-value mono" id="ncUtcTime">--:--:--</span></div>
       </div>
-      <div class="nc-market-badge" id="ncProviderBadge" style="cursor:pointer;" title="Market Data Provider (Priority: OANDA -> FXCM -> Twelve Data -> FOREX.com)">
+      <div class="nc-market-badge" id="ncProviderBadge" style="cursor:pointer;" title="Market Data Provider (Biquote)">
         <span class="nc-status-dot" id="ncProviderDot" style="background:#3b82f6;"></span>
-        <span id="ncProviderText">OANDA</span>
+        <span id="ncProviderText">Biquote</span>
         <span class="provider-backup-tag" id="ncProviderBackupTag" style="display:none;">BACKUP</span>
       </div>
       <div class="nc-market-badge" id="ncMarketBadge">
@@ -192,8 +193,8 @@ export function renderNextCandle(appState) {
       <!-- Chart Metadata & Provider Bar (Requirements 2, 3, 24) -->
       <div class="nc-chart-meta-bar">
         <div class="nc-meta-group">
-          <div class="nc-meta-item"><span class="nc-meta-label">DATA SOURCE:</span> <span class="nc-meta-val" id="ncMetaProvider">OANDA</span> <span class="provider-backup-tag" id="ncMetaBackupTag" style="display:none;">BACKUP</span></div>
-          <div class="nc-meta-item"><span class="nc-meta-label">SYMBOL:</span> <span class="nc-meta-val" id="ncMetaSymbol">EUR_USD</span></div>
+          <div class="nc-meta-item"><span class="nc-meta-label">DATA SOURCE:</span> <span class="nc-meta-val" id="ncMetaProvider">Biquote</span> <span class="provider-backup-tag" id="ncMetaBackupTag" style="display:none;">BACKUP</span></div>
+          <div class="nc-meta-item"><span class="nc-meta-label">SYMBOL:</span> <span class="nc-meta-val" id="ncMetaSymbol">EURUSD</span></div>
           <div class="nc-meta-item"><span class="nc-meta-label">TYPE:</span> <span class="nc-meta-val">FOREX</span></div>
           <div class="nc-meta-item"><span class="nc-meta-label">PRICE BASIS:</span> <span class="nc-meta-val highlight">MID</span></div>
         </div>
@@ -270,38 +271,14 @@ export function renderNextCandle(appState) {
                 <span id="ncDiagActiveProvBadge" class="mono" style="font-size:9px;color:var(--blue-text);">ACTIVE: OANDA</span>
               </div>
               <div class="nc-provider-chain-row" id="ncProviderChainRow">
-                <span class="nc-provider-pill is-active" id="pill_OANDA">1. OANDA</span>
-                <span class="nc-provider-arrow">→</span>
-                <span class="nc-provider-pill" id="pill_FXCM">2. FXCM</span>
-                <span class="nc-provider-arrow">→</span>
-                <span class="nc-provider-pill" id="pill_Twelve_Data">3. Twelve Data</span>
-                <span class="nc-provider-arrow">→</span>
-                <span class="nc-provider-pill" id="pill_FOREX_com">4. FOREX.com</span>
+                <span class="nc-provider-pill is-active" id="pill_Biquote">Biquote (REST + SignalR)</span>
               </div>
-              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;" id="ncProviderCards">
-                <div class="nc-diag-subbox" id="card_OANDA" style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle);">
+              <div style="display:grid;grid-template-columns:repeat(1,1fr);gap:8px;margin-bottom:8px;" id="ncProviderCards">
+                <div class="nc-diag-subbox" id="card_Biquote" style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle);">
                   <div style="font-weight:700;font-size:10px;color:var(--text-primary);display:flex;justify-content:space-between;">
-                    <span>OANDA (Pri 1)</span><span id="st_OANDA" class="mono" style="color:var(--green-text);">HEALTHY</span>
+                    <span>Biquote</span><span id="st_Biquote" class="mono" style="color:var(--green-text);">HEALTHY</span>
                   </div>
-                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;" id="meta_OANDA">Primary Feed</div>
-                </div>
-                <div class="nc-diag-subbox" id="card_FXCM" style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle);">
-                  <div style="font-weight:700;font-size:10px;color:var(--text-primary);display:flex;justify-content:space-between;">
-                    <span>FXCM (Pri 2)</span><span id="st_FXCM" class="mono" style="color:var(--blue-text);">STANDBY</span>
-                  </div>
-                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;" id="meta_FXCM">Backup 1</div>
-                </div>
-                <div class="nc-diag-subbox" id="card_Twelve_Data" style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle);">
-                  <div style="font-weight:700;font-size:10px;color:var(--text-primary);display:flex;justify-content:space-between;">
-                    <span>Twelve Data (Pri 3)</span><span id="st_Twelve_Data" class="mono" style="color:var(--blue-text);">STANDBY</span>
-                  </div>
-                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;" id="meta_Twelve_Data">Backup 2</div>
-                </div>
-                <div class="nc-diag-subbox" id="card_FOREX_com" style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;border:1px solid var(--border-subtle);">
-                  <div style="font-weight:700;font-size:10px;color:var(--text-primary);display:flex;justify-content:space-between;">
-                    <span>FOREX.com (Pri 4)</span><span id="st_FOREX_com" class="mono" style="color:var(--blue-text);">STANDBY</span>
-                  </div>
-                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;" id="meta_FOREX_com">Backup 3</div>
+                  <div style="font-size:9px;color:var(--text-muted);margin-top:2px;" id="meta_Biquote">Primary Feed</div>
                 </div>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border-subtle);padding-top:6px;">
@@ -309,8 +286,8 @@ export function renderNextCandle(appState) {
                   SWITCH LOG: <span id="ncDiagLastSwitchText" class="mono" style="color:var(--text-secondary);">No failovers triggered</span>
                 </div>
                 <div style="display:flex;gap:6px;">
-                  <button class="nc-chart-btn" id="btnSimulateFailover" style="padding:2px 8px;font-size:10px;border-color:rgba(245,158,11,0.4);color:#f59e0b;" title="Simulate failure of current active provider">⚡ SIMULATE FAILOVER</button>
-                  <button class="nc-chart-btn" id="btnResetProviders" style="padding:2px 8px;font-size:10px;border-color:rgba(34,197,94,0.4);color:#22c55e;" title="Reset all provider health states">🔄 RESET PROVIDERS</button>
+                  <button class="nc-chart-btn" id="btnRefreshData" style="padding:2px 8px;font-size:10px;border-color:rgba(34,197,94,0.4);color:#22c55e;" title="Refresh Data via REST">🔄 REFRESH DATA</button>
+                  <button class="nc-chart-btn" id="btnReconnectFeed" style="padding:2px 8px;font-size:10px;border-color:rgba(59,130,246,0.4);color:#3b82f6;" title="Reconnect Live SignalR Feed">⚡ RECONNECT FEED</button>
                 </div>
               </div>
             </div>
@@ -331,11 +308,11 @@ export function renderNextCandle(appState) {
           <table class="nc-table">
             <thead>
               <tr>
-                <th>Time</th><th>Pair</th><th>TF</th><th>Prediction</th><th>Prob</th><th>Actual</th><th>Result</th><th>Spread</th><th>Regime</th>
+                <th>Time</th><th>Pair</th><th>TF</th><th>Prediction</th><th>Prob</th><th>Actual</th><th>Result</th><th>Spread</th><th>Regime</th><th>Context</th>
               </tr>
             </thead>
             <tbody id="ncHistoryBody">
-              <tr><td colspan="9" class="nc-table-empty">Awaiting first prediction cycle...</td></tr>
+              <tr><td colspan="10" class="nc-table-empty">Awaiting first prediction cycle...</td></tr>
             </tbody>
           </table>
         </div>
@@ -388,6 +365,44 @@ export function renderNextCandle(appState) {
         <div class="nc-pred-disclaimer">DATA-DRIVEN FOREX DIRECTION ENSEMBLE — NOT FINANCIAL ADVICE</div>
       </div>
 
+      <!-- Institutional Market Summary (High-Density Multi-Timeframe Context) -->
+      <div class="nc-summary-card">
+        <div class="nc-panel-header" style="padding:4px 0 6px 0;">
+          <span class="nc-panel-title">Market Summary</span>
+          <span class="nc-panel-subtitle mono" id="ncSummaryAssetTF">EUR/USD · 1M</span>
+        </div>
+        <div class="nc-summary-grid">
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">REGIME</span>
+            <span class="nc-summary-val" id="ncSummaryRegime">CALCULATING...</span>
+          </div>
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">BIAS</span>
+            <span class="nc-summary-val" id="ncSummaryBias">NEUTRAL</span>
+          </div>
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">SETUPS</span>
+            <span class="nc-summary-val">
+              <span class="bull" id="ncSummaryBull">0▲</span>
+              <span class="bear" id="ncSummaryBear">0▼</span>
+              <span class="neut" id="ncSummaryWait">0⧗</span>
+            </span>
+          </div>
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">NEAREST S/R</span>
+            <span class="nc-summary-val mono" id="ncSummarySR" style="font-size:10px;">— / —</span>
+          </div>
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">ORDER BLOCKS</span>
+            <span class="nc-summary-val mono" id="ncSummaryOB" style="font-size:10px;">— / —</span>
+          </div>
+          <div class="nc-summary-item">
+            <span class="nc-summary-label">STATUS</span>
+            <span class="nc-summary-val live" id="ncSummaryFreshness">LIVE SYNC</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Model Evidence -->
       <div class="nc-evidence-card">
         <div class="nc-panel-header">
@@ -399,13 +414,47 @@ export function renderNextCandle(appState) {
           ${_evidenceRow('MOMENTUM', '—', 'neut')}
           ${_evidenceRow('PRICE ACTION', '—', 'neut')}
           ${_evidenceRow('VOLATILITY', '—', 'neut')}
+          ${_evidenceRow('TICK ACTIVITY', '—', 'neut')}
           ${_evidenceRow('STATISTICS', '—', 'neut')}
+          ${_evidenceRow('MARKET REGIME', '—', 'neut')}
           ${_evidenceRow('SESSION', '—', 'neut')}
           ${_evidenceRow('SPREAD', '—', 'neut')}
         </div>
       </div>
 
-      <!-- Indicator Consensus -->
+      <!-- Support & Resistance (Compact) -->
+      <div class="nc-sr-card" style="background:var(--bg-card);border-bottom:1px solid var(--border-subtle);padding:6px 12px;">
+        <div class="nc-panel-header" style="padding:0 0 4px 0;border-bottom:none;">
+          <span class="nc-panel-title">SUPPORT & RESISTANCE</span>
+          <span class="nc-panel-subtitle" id="ncSRCount">Key Levels</span>
+        </div>
+        <div id="ncSRGrid" style="display:grid;gap:2px;font-size:11px;">
+           <div style="color:var(--text-muted);">Awaiting data...</div>
+        </div>
+      </div>
+
+      <!-- Order Blocks & Supply/Demand Zones -->
+      <div class="nc-sr-card" style="background:var(--bg-card);border-bottom:1px solid var(--border-subtle);padding:6px 12px;">
+        <div class="nc-panel-header" style="padding:0 0 4px 0;border-bottom:none;">
+          <span class="nc-panel-title">ORDER BLOCKS & ZONES</span>
+          <span class="nc-panel-subtitle" id="ncOBCount">0 Active</span>
+        </div>
+        <div id="ncOBGrid" style="display:grid;gap:2px;font-size:11px;">
+           <div style="color:var(--text-muted);">Awaiting order block calculations...</div>
+        </div>
+      </div>
+
+      <!-- Market Structure & Price Action (Compact) -->
+      <div class="nc-sr-card" style="background:var(--bg-card);border-bottom:1px solid var(--border-subtle);padding:6px 12px;">
+        <div class="nc-panel-header" style="padding:0 0 4px 0;border-bottom:none;">
+          <span class="nc-panel-title">STRUCTURE & PRICE ACTION</span>
+        </div>
+        <div id="ncStructGrid" style="display:grid;gap:3px;font-size:11px;">
+           <div style="color:var(--text-muted);">Awaiting data...</div>
+        </div>
+      </div>
+
+      <!-- Indicator Consensus (Compact) -->
       <div class="nc-consensus-card">
         <div class="nc-panel-header">
           <span class="nc-panel-title">Indicator Signals</span>
@@ -418,14 +467,14 @@ export function renderNextCandle(appState) {
         <div class="nc-indicator-list" id="ncIndicatorList"><div class="nc-empty-msg">Awaiting data...</div></div>
       </div>
 
-      <!-- Strategy Consensus -->
+      <!-- Strategy Consensus (Compact Collapsible) -->
       <div class="nc-consensus-card">
         <div class="nc-panel-header">
           <span class="nc-panel-title">Strategy Signals</span>
           <div class="nc-consensus-counts">
             <span class="nc-count bull" id="ncStratBull">— ▲</span>
             <span class="nc-count bear" id="ncStratBear">— ▼</span>
-            <span class="nc-count neut" id="ncStratNeut">— →</span>
+            <span class="nc-count neut" id="ncStratNeut">— ⧗</span>
           </div>
         </div>
         <div class="nc-strategy-list" id="ncStrategyList"><div class="nc-empty-msg">Awaiting data...</div></div>
@@ -647,13 +696,20 @@ function _goToLiveEdge() {
 // ============================================================
 // 4 & 19. HISTORICAL DATA RENDERING & CONTINUITY
 // ============================================================
-function _renderHistorical(candles, activeCandle) {
+function _renderHistorical(newCandles, activeCandle) {
   if (!NC.mainSeries) return;
-  const valid = _validateCandles(candles);
-  NC.historicalCandles[NC.marketState.selectedTimeframe] = valid;
+  const valid = _validateCandles(newCandles);
+
+  const existing = NC.historicalCandles[NC.marketState.selectedTimeframe] || [];
+  const mergedMap = new Map();
+  existing.forEach(c => mergedMap.set(c.time, c));
+  valid.forEach(c => mergedMap.set(c.time, c));
+
+  const merged = Array.from(mergedMap.values()).sort((a, b) => a.time - b.time);
+  NC.historicalCandles[NC.marketState.selectedTimeframe] = merged;
 
   // Combine validated closed candles with the single active candle
-  const combined = [...valid];
+  const combined = [...merged];
   if (activeCandle) {
     const vActive = _validateCandle(activeCandle);
     if (vActive && (!valid.length || valid[valid.length - 1].time < vActive.time)) {
@@ -824,16 +880,16 @@ function _wireControls() {
     }
   });
 
-  // Multi-Provider Failover simulation buttons
-  document.getElementById('btnSimulateFailover')?.addEventListener('click', () => {
-    if (marketDataClient.isConnected) {
-      marketDataClient.simulateProviderFailure();
+  // Biquote Recovery Buttons
+  document.getElementById('btnRefreshData')?.addEventListener('click', () => {
+    if (marketDataClient.refreshData) {
+      marketDataClient.refreshData();
     }
   });
 
-  document.getElementById('btnResetProviders')?.addEventListener('click', () => {
-    if (marketDataClient.isConnected) {
-      marketDataClient.resetProviderHealth();
+  document.getElementById('btnReconnectFeed')?.addEventListener('click', () => {
+    if (marketDataClient.reconnectLiveFeed) {
+      marketDataClient.reconnectLiveFeed();
     }
   });
 
@@ -961,7 +1017,7 @@ function _connectAndSubscribe() {
   _updateDiagFailoverPanel(marketDataClient.getProviderHealth(), currentProv, isBackup);
 
   if (!marketDataClient.isConnected && marketDataClient.status !== 'CONNECTING') {
-    marketDataClient.connect('ws://localhost:3001');
+    marketDataClient.connect();
   } else if (marketDataClient.isConnected) {
     marketDataClient.subscribe(NC.marketState.symbol, ['1M', '2M', '3M', '4M', '5M']);
     marketDataClient.requestProviderStatus();
@@ -1020,6 +1076,29 @@ function _onHistoricalCandles(data) {
 
   if (data.timeframe === NC.marketState.selectedTimeframe) {
     _renderHistorical(data.candles, data.activeCandle);
+
+    if (data.activeCandle) {
+      _updateActiveCandle(data.activeCandle);
+    }
+
+    // Generate initial prediction if not already set or if it's stale
+    const contextCandles = [...data.candles];
+    if (data.activeCandle) {
+      // We use the last closed candle to predict the active one, or if we want to predict the next one after the active one,
+      // Wait, the active candle is "FORMING", meaning it's the target candle. 
+      // So the prediction should be based on data.candles (the closed candles).
+      if (contextCandles.length > 0) {
+        const indicators = calculateTechnicalIndicators(contextCandles);
+        const strategies = evaluateTradingStrategies(contextCandles, indicators, null, null, null, null, null, null, { symbol: NC.marketState.symbol, timeframe: data.timeframe });
+        const prediction = generateNextCandlePrediction(contextCandles, indicators, strategies, data.timeframe, { symbol: NC.marketState.symbol });
+
+        _onPrediction({
+          symbol: NC.marketState.symbol,
+          timeframe: data.timeframe,
+          prediction: prediction
+        });
+      }
+    }
   }
 }
 
@@ -1046,7 +1125,7 @@ function _onCandleClose(data) {
 
   // Handle resolved prediction
   if (data.resolvedPrediction) {
-    _appendPredictionHistory(data.resolvedPrediction);
+    _renderHistoryTable();
     _updatePerformanceStats();
   }
 
@@ -1057,6 +1136,22 @@ function _onCandleClose(data) {
 
 function _onPrediction(data) {
   if (data.symbol !== NC.marketState.symbol || data.timeframe !== NC.marketState.selectedTimeframe) return;
+
+  if (!data.prediction.id) {
+    data.prediction.id = 'pred_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    data.prediction.pair = data.symbol;
+    data.prediction.timeframe = data.timeframe;
+    data.prediction.predictionTimestamp = Date.now();
+    data.prediction.resolved = false;
+    data.prediction.modelVersion = 'NCF-ENS-v3';
+    data.prediction.targetStart = NC.marketState.currentCandleStart;
+    data.prediction.targetEnd = NC.marketState.currentCandleEnd;
+
+    NC.predictionHistory.unshift(data.prediction);
+    if (NC.predictionHistory.length > 200) NC.predictionHistory.pop();
+    _renderHistoryTable();
+  }
+
   NC.prediction = data.prediction;
   const syncNow = data.serverTime || data.prediction?.timestamp || marketDataClient.getSynchronizedTime();
   NC.predictionTime = new Date(syncNow);
@@ -1076,9 +1171,6 @@ function _onMarketStatus(data) {
 function _onConnectionStatus(data) {
   NC.marketState.connectionStatus = data.status;
   _updateConnectionBadge(data.status);
-  if (data.status === 'connected') {
-    marketDataClient.subscribe(NC.marketState.symbol, ['1M', '2M', '3M', '4M', '5M']);
-  }
 }
 
 function _onStatusChange(data) {
@@ -1104,6 +1196,14 @@ function _onDiagnosticsResponse(data) {
 
   $('ncDiagOurPrice', fmt(data.ourPrice));
   $('ncDiagRefPrice', fmt(data.referencePrice));
+
+  if (data.message) {
+    const logEl = document.getElementById('ncDiagLastSwitchText');
+    if (logEl) {
+      logEl.innerText = data.message;
+      logEl.style.color = 'var(--yellow-text, #eab308)';
+    }
+  }
 
   const diff = data.ourPrice != null && data.referencePrice != null ? Math.abs(data.ourPrice - data.referencePrice) : 0;
   $('ncDiagDiff', `Diff: ${diff.toFixed(digits)} (${(diff / (digits === 3 ? 0.01 : 0.0001)).toFixed(1)} pips)`);
@@ -1137,32 +1237,44 @@ function _onProviderSwitch(data) {
 function _onProviderStatus(data) {
   NC.marketState.provider = data.activeProvider || NC.marketState.provider;
   NC.marketState.isBackup = !!data.isBackup;
-  _updateProviderUI(NC.marketState.provider, NC.marketState.isBackup);
+
+  const allFailed = data.providers && data.providers.length > 0 && data.providers.every(p => p.state === 'FAILED' || p.state === 'UNRESPONSIVE');
+  const errorMsg = data.error || (allFailed ? 'ALL MARKET DATA PROVIDERS UNAVAILABLE' : null);
+
+  _updateProviderUI(NC.marketState.provider, NC.marketState.isBackup, errorMsg);
   _updateDiagFailoverPanel(data.providers, data.activeProvider, data.isBackup);
 }
 
-function _updateProviderUI(providerName, isBackup) {
-  const pName = providerName || 'OANDA';
-  $('ncMetaProvider', pName);
-  $('ncHeaderProvider', pName);
+function _updateProviderUI(providerName, isBackup, errorMessage) {
+  if (errorMessage) {
+    $('ncMetaProvider', errorMessage);
+    const metaEl = document.getElementById('ncMetaProvider');
+    if (metaEl) { metaEl.style.color = '#ef4444'; metaEl.style.fontWeight = 'bold'; }
+    $('ncHeaderProvider', 'DATA UNAVAILABLE');
+    const badge = document.getElementById('ncProviderBadge');
+    if (badge) badge.className = 'nc-provider-badge error';
+  } else {
+    const pName = providerName || 'Biquote';
+    $('ncMetaProvider', pName);
+    const metaEl = document.getElementById('ncMetaProvider');
+    if (metaEl) { metaEl.style.color = ''; metaEl.style.fontWeight = ''; }
+    $('ncHeaderProvider', pName);
+    const badge = document.getElementById('ncProviderBadge');
+    if (badge) badge.className = 'nc-provider-badge' + (isBackup ? ' backup-active' : '');
+  }
 
   const backupTag = document.getElementById('ncProviderBackupTag');
   if (backupTag) {
-    backupTag.style.display = isBackup ? 'inline-block' : 'none';
+    backupTag.style.display = isBackup && !errorMessage ? 'inline-block' : 'none';
   }
   const metaBackup = document.getElementById('ncMetaBackupTag');
   if (metaBackup) {
-    metaBackup.style.display = isBackup ? 'inline-block' : 'none';
-  }
-
-  const badge = document.getElementById('ncProviderBadge');
-  if (badge) {
-    badge.className = 'nc-provider-badge' + (isBackup ? ' backup-active' : '');
+    metaBackup.style.display = isBackup && !errorMessage ? 'inline-block' : 'none';
   }
 }
 
 function _updateDiagFailoverPanel(providers, activeName, isBackup) {
-  const pActive = activeName || NC.marketState.provider || 'OANDA';
+  const pActive = activeName || NC.marketState.provider || 'Biquote';
   const badgeEl = document.getElementById('ncDiagActiveProvBadge');
   if (badgeEl) {
     badgeEl.textContent = `ACTIVE: ${pActive}${isBackup ? ' [BACKUP]' : ''}`;
@@ -1170,10 +1282,7 @@ function _updateDiagFailoverPanel(providers, activeName, isBackup) {
   }
 
   const defaultProviders = [
-    { name: 'OANDA', state: 'HEALTHY' },
-    { name: 'FXCM', state: 'STANDBY' },
-    { name: 'Twelve Data', state: 'STANDBY' },
-    { name: 'FOREX.com', state: 'STANDBY' }
+    { name: 'Biquote', state: 'HEALTHY' }
   ];
   const pList = (Array.isArray(providers) && providers.length > 0) ? providers : defaultProviders;
 
@@ -1218,7 +1327,7 @@ function _updateDiagFailoverPanel(providers, activeName, isBackup) {
 function _onTimeSync(syncData) {
   NC.marketState.clockOffset = syncData.currentOffset;
   NC.marketState.serverTime = syncData.serverTime;
-  
+
   // Every time synchronization occurs:
   // 1. measure current clock offset -> syncData.currentOffset
   // 2. update synchronized time -> syncNowMs
@@ -1328,9 +1437,38 @@ function _rolloverFormingCandle(candleStart, candleEnd) {
   if (!prev) return;
   const prevClose = prev.close;
 
+  const closedCandle = { ...prev, status: 'CLOSED' };
+
+  let resolvedPrediction = null;
+  if (NC.prediction && !NC.prediction.resolved) {
+    const actualDir = closedCandle.close > closedCandle.open ? 'UP' : (closedCandle.close < closedCandle.open ? 'DOWN' : 'FLAT');
+    const isCorrect = actualDir === NC.prediction.direction;
+    resolvedPrediction = {
+      ...NC.prediction,
+      actualDirection: actualDir,
+      correct: isCorrect,
+      resolved: true,
+      closePrice: closedCandle.close
+    };
+    NC.prediction.resolved = true;
+
+    const histPred = NC.predictionHistory.find(p => p.id === NC.prediction.id);
+    if (histPred) {
+      Object.assign(histPred, resolvedPrediction);
+    }
+  }
+
+  // Simulate server candleClose locally
+  _onCandleClose({
+    symbol: NC.marketState.symbol,
+    timeframe: NC.marketState.selectedTimeframe,
+    candle: closedCandle,
+    resolvedPrediction: resolvedPrediction
+  });
+
   const newCandle = {
     time: candleStart,
-    timestamp: candleStart,
+    timestamp: candleStart * 1000,
     open: prevClose,
     high: prevClose,
     low: prevClose,
@@ -1349,6 +1487,27 @@ function _rolloverFormingCandle(candleStart, candleEnd) {
   NC.marketState.currentCandle = newCandle;
   if (NC.mainSeries) {
     NC.mainSeries.update(_validateCandle(newCandle));
+  }
+
+  // Client-side Generate next prediction cycle
+  if (NC.historicalCandles[NC.marketState.selectedTimeframe]) {
+    const hist = NC.historicalCandles[NC.marketState.selectedTimeframe];
+    // Include closed candle as it's the last finalized one
+    const contextCandles = [...hist, closedCandle];
+
+    // Sort and ensure unique by time to avoid duplicates
+    const uniqueCandles = Array.from(new Map(contextCandles.map(c => [c.time, c])).values())
+      .sort((a, b) => a.time - b.time);
+
+    const indicators = calculateTechnicalIndicators(uniqueCandles);
+    const strategies = evaluateTradingStrategies(uniqueCandles, indicators, null, null, null, null, null, null, { symbol: NC.marketState.symbol, timeframe: NC.marketState.selectedTimeframe });
+    const prediction = generateNextCandlePrediction(uniqueCandles, indicators, strategies, NC.marketState.selectedTimeframe, { symbol: NC.marketState.symbol });
+
+    _onPrediction({
+      symbol: NC.marketState.symbol,
+      timeframe: NC.marketState.selectedTimeframe,
+      prediction: prediction
+    });
   }
 }
 
@@ -1397,11 +1556,14 @@ function _updateCandleStripUI(candle) {
 function _updateConnectionBadge(status) {
   const map = {
     connected: { text: 'LIVE', cls: 'live', dotCls: 'active' },
+    live: { text: 'LIVE', cls: 'live', dotCls: 'active' },
     resyncing: { text: 'RESYNCING', cls: 'warn', dotCls: 'warn' },
     reconnecting: { text: 'RECONNECTING', cls: 'warn', dotCls: 'warn' },
     disconnected: { text: 'DISCONNECTED', cls: 'error', dotCls: 'error' },
+    error: { text: 'ERROR', cls: 'error', dotCls: 'error' },
     failed: { text: 'DISCONNECTED', cls: 'error', dotCls: 'error' },
     connecting: { text: 'CONNECTING', cls: 'warn', dotCls: 'warn' },
+    'rest / periodic': { text: 'REST / PERIODIC', cls: 'warn', dotCls: 'warn' },
   };
   const s = map[status?.toLowerCase()] || map.disconnected;
   const dot = document.getElementById('ncStatusDot');
@@ -1458,25 +1620,100 @@ function _renderPrediction(pred) {
   $('ncRegimeLabel', `Regime: ${pred.regime || 'TRENDING'}`);
 
   _updateEvidenceGrid(pred);
+  _renderMarketSummary(pred);
   if (pred.indicators?.length) _renderIndicatorList(pred.indicators);
   if (pred.strategies?.length) _renderStrategyList(pred.strategies);
+  if (pred.supportResistance) _renderSupportResistance(pred.supportResistance, NC.marketState.mid);
+  if (pred.orderBlocks) _renderOrderBlocks(pred.orderBlocks, NC.marketState.mid);
+  if (pred.marketStructure && pred.priceAction) _renderMarketStructure(pred.marketStructure, pred.priceAction);
 
   $dot('ncDotModel', 'active');
   $('ncModelText', 'ACTIVE');
 }
 
+function _renderMarketSummary(pred) {
+  const assetTf = document.getElementById('ncSummaryAssetTF');
+  if (assetTf) assetTf.textContent = `${NC.marketState.symbol} · ${NC.marketState.selectedTimeframe}`;
+
+  const regEl = document.getElementById('ncSummaryRegime');
+  if (regEl) regEl.textContent = (pred.regime || 'RANGE BOUND').replace(/_/g, ' ');
+
+  const biasEl = document.getElementById('ncSummaryBias');
+  if (biasEl) {
+    const isUp = pred.direction === 'UP';
+    biasEl.textContent = isUp ? 'BULLISH BIAS' : 'BEARISH BIAS';
+    biasEl.className = 'nc-summary-val ' + (isUp ? 'bull' : 'bear');
+  }
+
+  let bullCount = 0, bearCount = 0, waitCount = 0;
+  for (const s of (pred.strategies || [])) {
+    if (s.signal === 'BULLISH') bullCount++;
+    else if (s.signal === 'BEARISH') bearCount++;
+    else waitCount++;
+  }
+  $('ncSummaryBull', `${bullCount}▲`);
+  $('ncSummaryBear', `${bearCount}▼`);
+  $('ncSummaryWait', `${waitCount}⧗`);
+
+  const srEl = document.getElementById('ncSummarySR');
+  if (srEl && pred.supportResistance) {
+    const digits = NC.marketState.symbol.includes('JPY') ? 3 : 5;
+    const supStr = pred.supportResistance.nearestSupport ? pred.supportResistance.nearestSupport.price.toFixed(digits) : '—';
+    const resStr = pred.supportResistance.nearestResistance ? pred.supportResistance.nearestResistance.price.toFixed(digits) : '—';
+    srEl.textContent = `${supStr} / ${resStr}`;
+  }
+
+  const obEl = document.getElementById('ncSummaryOB');
+  if (obEl && pred.orderBlocks) {
+    const digits = NC.marketState.symbol.includes('JPY') ? 3 : 5;
+    const bullOBStr = pred.orderBlocks.nearestBullishOB ? pred.orderBlocks.nearestBullishOB.mid.toFixed(digits) : '—';
+    const bearOBStr = pred.orderBlocks.nearestBearishOB ? pred.orderBlocks.nearestBearishOB.mid.toFixed(digits) : '—';
+    obEl.textContent = `${bullOBStr} / ${bearOBStr}`;
+  }
+}
+
 function _updateEvidenceGrid(pred) {
   const f = pred.features || {};
+  const rd = pred.regimeData || {};
+  const ta = pred.tickActivity || {};
+
+  // Volatility formatting
+  let volLabel = 'VOLATILITY';
+  let volVal = 'NORMAL';
+  let volDir = 'neut';
+  if (rd.volatilityState) {
+    volVal = rd.volatilityState;
+    if (volVal.includes('HIGH')) volDir = 'bull';
+    if (volVal.includes('LOW')) volDir = 'bear';
+  }
+
+  // Regime formatting
+  let regVal = (pred.regime || 'UNCERTAIN').replace(/_/g, ' ');
+  let regDir = pred.regime === 'TRENDING_UP' ? 'bull' : pred.regime === 'TRENDING_DOWN' ? 'bear' : 'neut';
+
+  // Tick Activity formatting
+  let tickVal = 'NORMAL';
+  let tickDir = 'neut';
+  if (ta.activityLevel) {
+    tickVal = ta.activityLevel.replace('_', ' ');
+    if (ta.activityLevel.includes('HIGH')) tickDir = 'bull';
+    if (ta.activityLevel.includes('LOW')) tickDir = 'bear';
+  }
+
+  // Spread formatting
+  let spreadVal = ta.spreadQuality || pred.spreadAssessment?.quality || 'NORMAL';
+  let spreadDir = spreadVal === 'TIGHT' ? 'bull' : spreadVal === 'WIDE' ? 'bear' : 'neut';
+
   const rows = [
     { label: 'TREND', dir: f.emaAligned > 0 ? 'bull' : f.emaAligned < 0 ? 'bear' : 'neut', val: f.emaAligned > 0 ? 'Bullish' : f.emaAligned < 0 ? 'Bearish' : 'Neutral', fill: f.emaAligned > 0 ? 75 : f.emaAligned < 0 ? 25 : 50 },
-    { label: 'MOMENTUM', dir: (f.stochRsi || f.rsi) > 50 ? 'bull' : 'bear', val: `StochRSI ${(f.stochRsi || f.rsi)?.toFixed(0) || '—'}`, fill: f.stochRsi ? Math.min(95, Math.max(5, f.stochRsi)) : 50 },
+    { label: 'MOMENTUM', dir: (f.rsi) > 50 ? 'bull' : 'bear', val: `RSI ${(f.rsi)?.toFixed(0) || '—'}`, fill: f.rsi ? Math.min(95, Math.max(5, f.rsi)) : 50 },
     { label: 'PRICE ACTION', dir: f.engulfingBull ? 'bull' : f.engulfingBear ? 'bear' : f.bodyDir > 0 ? 'bull' : f.bodyDir < 0 ? 'bear' : 'neut', val: f.engulfingBull ? 'Bull Engulf' : f.engulfingBear ? 'Bear Engulf' : f.pinBarBull ? 'Pin ↑' : f.pinBarBear ? 'Pin ↓' : f.insideBar ? 'Inside Bar' : f.outsideBar ? 'Outside Bar' : 'Continuous', fill: f.bodyDir > 0 ? 70 : f.bodyDir < 0 ? 30 : 50 },
-    { label: 'VOLATILITY', dir: f.bbWidth > 0.002 ? 'bull' : 'neut', val: `BBW ${(f.bbWidth * 1000)?.toFixed(1) || '—'}`, fill: (f.bbPos || 0.5) * 100 },
-    { label: 'VOLUME/FLOW', dir: f.obvMom > 0 ? 'bull' : f.obvMom < 0 ? 'bear' : 'neut', val: f.obvMom > 0 ? 'Accumulation' : f.obvMom < 0 ? 'Distribution' : 'Neutral', fill: f.obvMom > 0 ? 75 : f.obvMom < 0 ? 25 : 50 },
-    { label: 'STATISTICS', dir: f.zScore > 1.5 ? 'bear' : f.zScore < -1.5 ? 'bull' : 'neut', val: `Z ${f.zScore?.toFixed(2) || '0.00'}`, fill: Math.min(90, Math.max(10, 50 - (f.zScore || 0) * 15)) },
-    { label: 'MARKET REGIME', dir: pred.regime === 'TRENDING_UP' ? 'bull' : pred.regime === 'TRENDING_DOWN' ? 'bear' : 'neut', val: (pred.regime || 'UNCERTAIN').replace(/_/g, ' '), fill: pred.regime === 'TRENDING_UP' ? 80 : pred.regime === 'TRENDING_DOWN' ? 20 : 50 },
+    { label: 'VOLATILITY', dir: volDir, val: volVal, fill: volDir === 'bull' ? 80 : volDir === 'bear' ? 20 : 50 },
+    { label: 'TICK ACTIVITY', dir: tickDir, val: tickVal, fill: tickDir === 'bull' ? 80 : tickDir === 'bear' ? 20 : 50 },
+    { label: 'STATISTICS', dir: f.zScore > 1.5 ? 'bull' : f.zScore < -1.5 ? 'bear' : 'neut', val: `Z ${f.zScore?.toFixed(2) || '0.00'}`, fill: Math.min(90, Math.max(10, 50 + (f.zScore || 0) * 15)) },
+    { label: 'MARKET REGIME', dir: regDir, val: regVal, fill: regDir === 'bull' ? 80 : regDir === 'bear' ? 20 : 50 },
     { label: 'SESSION', dir: 'neut', val: (pred.session || 'LONDON').replace(/_/g, ' '), fill: 50 },
-    { label: 'SPREAD', dir: 'bull', val: pred.spreadAssessment?.quality || 'NORMAL', fill: 70 },
+    { label: 'SPREAD', dir: spreadDir, val: spreadVal, fill: spreadDir === 'bull' ? 80 : spreadDir === 'bear' ? 20 : 50 },
   ];
 
   const grid = document.getElementById('ncEvidenceGrid');
@@ -1501,7 +1738,7 @@ function _renderIndicatorList(indicators) {
     else if (ind.signal === 'BEARISH') bear++;
     else neut++;
     return `<div class="nc-ind-row">
-      <span class="nc-ind-name">${ind.name}</span>
+      <span class="nc-ind-name" title="${ind.name}">${ind.name}</span>
       <span class="nc-ind-val mono">${ind.value || '—'}</span>
       <span class="nc-ind-sig ${cls}">${arrow} ${ind.signal}</span>
     </div>`;
@@ -1511,24 +1748,307 @@ function _renderIndicatorList(indicators) {
   $('ncIndNeut', `${neut} →`);
 }
 
+// Global UI interaction helpers
+window.__toggleStratDetail = function(stratId) {
+  const el = document.getElementById('detail_' + stratId);
+  if (!el) return;
+  const isHidden = el.style.display === 'none' || !el.style.display;
+  el.style.display = isHidden ? 'flex' : 'none';
+};
+
+window.__toggleCategory = function(catId) {
+  const body = document.getElementById('catBody_' + catId);
+  const header = document.getElementById('catHeader_' + catId);
+  if (!body) return;
+  body.classList.toggle('is-collapsed');
+  header?.classList.toggle('collapsed');
+};
+
 function _renderStrategyList(strategies) {
-  let bull = 0, bear = 0, neut = 0;
+  let globalBull = 0, globalBear = 0, globalWait = 0;
   const list = document.getElementById('ncStrategyList');
   if (!list) return;
-  list.innerHTML = strategies.map(s => {
-    const cls = s.signal === 'BULLISH' ? 'bull' : s.signal === 'BEARISH' ? 'bear' : 'neut';
-    const arrow = s.signal === 'BULLISH' ? '▲' : s.signal === 'BEARISH' ? '▼' : '→';
-    if (s.signal === 'BULLISH') bull++;
-    else if (s.signal === 'BEARISH') bear++;
-    else neut++;
-    return `<div class="nc-strat-row">
-      <span class="nc-strat-name">${s.name}</span>
-      <span class="nc-strat-sig ${cls}">${arrow} ${s.signal}</span>
+
+  const grouped = {};
+  for (const s of strategies) {
+    const cat = s.category || 'Uncategorized';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(s);
+  }
+
+  // If 1M is active, prioritize M1 SCALPING STRATEGIES at the top
+  const catKeys = Object.keys(grouped);
+  catKeys.sort((a, b) => {
+    if (a === 'M1 SCALPING STRATEGIES') return -1;
+    if (b === 'M1 SCALPING STRATEGIES') return 1;
+    return a.localeCompare(b);
+  });
+
+  let html = '';
+  for (const cat of catKeys) {
+    const strats = grouped[cat];
+    let catBull = 0, catBear = 0, catWait = 0;
+    const catId = cat.replace(/[^a-zA-Z0-9]/g, '_');
+    const isM1Cat = cat === 'M1 SCALPING STRATEGIES';
+
+    let stratItemsHtml = '';
+    for (const s of strats) {
+      const isBull = s.signal === 'BULLISH';
+      const isBear = s.signal === 'BEARISH';
+      const isWait = s.signal === 'WAIT';
+      const isUnver = s.signal === 'EXECUTION NOT VERIFIED';
+
+      const badgeCls = isBull ? 'bull' : isBear ? 'bear' : isUnver ? 'unver' : isWait ? 'wait' : 'noval';
+      const badgeText = isBull ? 'BUY ▲' : isBear ? 'SELL ▼' : isUnver ? 'UNVERIFIED' : isWait ? 'WAIT ⧗' : 'NO SETUP';
+
+      if (isBull) { catBull++; globalBull++; }
+      else if (isBear) { catBear++; globalBear++; }
+      else { catWait++; globalWait++; }
+
+      const statusSnippet = s.status ? s.status.replace(/^BULLISH SETUP — |^BEARISH SETUP — |^WAIT — /, '') : (s.evidence || '');
+      const sId = s.id ? s.id.replace(/[^a-zA-Z0-9_]/g, '_') : ('st_' + Math.random().toString(36).substring(2, 7));
+
+      stratItemsHtml += `
+      <div class="nc-strat-item">
+        <div class="nc-strat-row" onclick="window.__toggleStratDetail('${sId}')" title="${s.name} — Click to expand technical details">
+          <span class="nc-strat-name">${s.name}</span>
+          <span class="nc-strat-badge ${badgeCls}">${badgeText}</span>
+          <span class="nc-strat-status">${statusSnippet}</span>
+          <span class="nc-strat-chevron">▾</span>
+        </div>
+        <div class="nc-strat-detail" id="detail_${sId}" style="display:none;">
+          <div class="nc-detail-explanation"><strong>Analysis:</strong> ${s.evidence || 'Evaluating price action and structure.'}</div>
+          <div class="nc-detail-tags">
+            ${(s.conditionsMet || []).map(c => `<span class="nc-tag met">✓ ${c}</span>`).join('')}
+            ${(s.conditionsUnmet || []).map(c => `<span class="nc-tag unmet">⏳ ${c}</span>`).join('')}
+          </div>
+          <div class="nc-detail-meta">
+            <div><span>Trigger:</span> <span class="mono">${s.trigger || 'Confirmation'}</span></div>
+            <div><span>Invalidation:</span> <span class="mono">${s.invalidation || 'Boundary'}</span></div>
+            <div><span>Level:</span> <span class="mono">${s.relevantLevel || 'S/R zone'}</span></div>
+            <div><span>Quality / Cost:</span> <span class="mono">${s.qualityScore || 50}/100 · ${s.costEvaluation || 'Normal'}</span></div>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    // Collapsible Category Section
+    html += `
+    <div class="nc-category-group">
+      <div class="nc-category-header" id="catHeader_${catId}" onclick="window.__toggleCategory('${catId}')">
+        <span class="nc-cat-title ${isM1Cat ? 'is-m1' : ''}">
+          <span class="nc-cat-icon">▾</span> ${cat} (${strats.length})
+        </span>
+        <span class="nc-cat-counts">
+          <span class="bull">${catBull}▲</span>
+          <span class="bear">${catBear}▼</span>
+          <span class="neut">${catWait}⧗</span>
+        </span>
+      </div>
+      <div class="nc-category-body" id="catBody_${catId}">
+        ${stratItemsHtml}
+      </div>
     </div>`;
-  }).join('');
-  $('ncStratBull', `${bull} ▲`);
-  $('ncStratBear', `${bear} ▼`);
-  $('ncStratNeut', `${neut} →`);
+  }
+
+  list.innerHTML = html;
+
+  $('ncStratBull', `${globalBull} ▲`);
+  $('ncStratBear', `${globalBear} ▼`);
+  $('ncStratNeut', `${globalWait} ⧗`);
+}
+
+function _renderSupportResistance(sr, currentPrice) {
+  const grid = document.getElementById('ncSRGrid');
+  if (!grid || !sr) return;
+
+  const digits = NC.marketState.symbol.includes('JPY') ? 3 : 5;
+  const fmt = (v) => v != null ? Number(v).toFixed(digits) : '—';
+  const pipMult = digits === 3 ? 100 : 10000;
+
+  let html = '';
+
+  if (sr.nearestResistance) {
+    const pips = (sr.nearestResistance.distance * pipMult).toFixed(1);
+    const freshness = sr.nearestResistance.freshness || 'ACTIVE';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;">
+      <span style="color:var(--red-text);font-weight:700;">RES: ${fmt(sr.nearestResistance.price)}</span>
+      <span class="mono" style="font-size:10px;">${pips} pips · <span class="nc-tag ${freshness === 'FRESH' ? 'met' : 'unmet'}">${freshness}</span></span>
+    </div>`;
+  } else {
+    html += `<div style="color:var(--text-muted);padding:2px 0;">RES: None nearby</div>`;
+  }
+
+  if (sr.nearestSupport) {
+    const pips = (sr.nearestSupport.distance * pipMult).toFixed(1);
+    const freshness = sr.nearestSupport.freshness || 'ACTIVE';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-top:1px solid var(--border-subtle);margin-top:2px;padding-top:2px;">
+      <span style="color:var(--green-text);font-weight:700;">SUP: ${fmt(sr.nearestSupport.price)}</span>
+      <span class="mono" style="font-size:10px;">${pips} pips · <span class="nc-tag ${freshness === 'FRESH' ? 'met' : 'unmet'}">${freshness}</span></span>
+    </div>`;
+  } else {
+    html += `<div style="color:var(--text-muted);padding:2px 0;border-top:1px solid var(--border-subtle);margin-top:2px;padding-top:2px;">SUP: None nearby</div>`;
+  }
+
+  _drawSRZonesOnChart(sr);
+  grid.innerHTML = html;
+}
+
+function _renderOrderBlocks(ob, currentPrice) {
+  const grid = document.getElementById('ncOBGrid');
+  if (!grid || !ob) return;
+
+  const digits = NC.marketState.symbol.includes('JPY') ? 3 : 5;
+  const fmt = (v) => v != null ? Number(v).toFixed(digits) : '—';
+  const pipMult = digits === 3 ? 100 : 10000;
+
+  const countEl = document.getElementById('ncOBCount');
+  if (countEl) countEl.textContent = `${ob.activeOrderBlocks?.length || 0} Active`;
+
+  let html = '';
+
+  if (ob.nearestBearishOB) {
+    const o = ob.nearestBearishOB;
+    const pips = (o.distance * pipMult).toFixed(1);
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;">
+      <span style="color:var(--orange-text, #f97316);font-weight:700;">BEAR OB: ${fmt(o.low)}–${fmt(o.high)}</span>
+      <span class="mono" style="font-size:10px;">${pips} pips · <span class="nc-tag ${o.status === 'UNTESTED' ? 'met' : 'unmet'}">${o.status}</span></span>
+    </div>`;
+  } else {
+    html += `<div style="color:var(--text-muted);padding:2px 0;">BEAR OB: None nearby</div>`;
+  }
+
+  if (ob.nearestBullishOB) {
+    const o = ob.nearestBullishOB;
+    const pips = (o.distance * pipMult).toFixed(1);
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-top:1px solid var(--border-subtle);margin-top:2px;padding-top:2px;">
+      <span style="color:var(--cyan-text, #06b6d4);font-weight:700;">BULL OB: ${fmt(o.low)}–${fmt(o.high)}</span>
+      <span class="mono" style="font-size:10px;">${pips} pips · <span class="nc-tag ${o.status === 'UNTESTED' ? 'met' : 'unmet'}">${o.status}</span></span>
+    </div>`;
+  } else {
+    html += `<div style="color:var(--text-muted);padding:2px 0;border-top:1px solid var(--border-subtle);margin-top:2px;padding-top:2px;">BULL OB: None nearby</div>`;
+  }
+
+  _drawOrderBlocksOnChart(ob);
+  grid.innerHTML = html;
+}
+
+let _srLines = [];
+function _drawSRZonesOnChart(sr) {
+  if (!NC.chart || !NC.mainSeries) return;
+  _srLines.forEach(line => {
+    try { NC.mainSeries.removePriceLine(line); } catch (e) {}
+  });
+  _srLines = [];
+
+  const addLine = (price, color, title) => {
+    try {
+      const line = NC.mainSeries.createPriceLine({
+        price: price,
+        color: color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: title,
+      });
+      _srLines.push(line);
+    } catch (e) {}
+  };
+
+  if (sr?.nearestResistance) addLine(sr.nearestResistance.price, '#ef4444', 'Res');
+  if (sr?.nearestSupport) addLine(sr.nearestSupport.price, '#22c55e', 'Sup');
+}
+
+let _obLines = [];
+function _drawOrderBlocksOnChart(ob) {
+  if (!NC.chart || !NC.mainSeries) return;
+  _obLines.forEach(line => {
+    try { NC.mainSeries.removePriceLine(line); } catch (e) {}
+  });
+  _obLines = [];
+
+  const addLine = (price, color, title) => {
+    try {
+      const line = NC.mainSeries.createPriceLine({
+        price: price,
+        color: color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: title,
+      });
+      _obLines.push(line);
+    } catch (e) {}
+  };
+
+  if (ob?.nearestBearishOB) {
+    addLine(ob.nearestBearishOB.mid, '#f97316', 'Bear OB');
+  }
+  if (ob?.nearestBullishOB) {
+    addLine(ob.nearestBullishOB.mid, '#06b6d4', 'Bull OB');
+  }
+}
+
+function _renderMarketStructure(struct, pa) {
+  const grid = document.getElementById('ncStructGrid');
+  if (!grid || !struct || !pa) return;
+
+  const digits = NC.marketState.symbol.includes('JPY') ? 3 : 5;
+  const fmt = (v) => v != null ? Number(v).toFixed(digits) : '—';
+
+  let html = '';
+
+  // Trend & BOS
+  const trendCol = struct.trend === 'BULLISH' ? 'var(--green-text)' : struct.trend === 'BEARISH' ? 'var(--red-text)' : 'var(--text-primary)';
+  html += `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+    <span>TREND (H/L):</span>
+    <span style="color:${trendCol};font-weight:bold;">${struct.trend}</span>
+  </div>`;
+
+  if (struct.lastEvent) {
+    html += `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+      <span>LAST BREAK:</span>
+      <span class="mono">${struct.lastEvent}</span>
+    </div>`;
+  }
+
+  // Sweeps
+  if (struct.liquidity.hasSweep) {
+    html += `<div style="display:flex;justify-content:space-between;padding:2px 0;color:var(--yellow-text);">
+      <span>LIQUIDITY SWEEP:</span>
+      <span class="mono">${struct.liquidity.sweepType} @ ${fmt(struct.liquidity.sweepPrice)}</span>
+    </div>`;
+  }
+
+  if (struct.liquidity.equalHighs) {
+    html += `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+      <span>EQUAL HIGHS:</span>
+      <span class="mono">${fmt(struct.liquidity.equalHighs)}</span>
+    </div>`;
+  }
+  if (struct.liquidity.equalLows) {
+    html += `<div style="display:flex;justify-content:space-between;padding:2px 0;">
+      <span>EQUAL LOWS:</span>
+      <span class="mono">${fmt(struct.liquidity.equalLows)}</span>
+    </div>`;
+  }
+
+  // Price Action
+  const pats = [];
+  if (pa.patterns.isBullEngulf) pats.push('Bull Engulf');
+  if (pa.patterns.isBearEngulf) pats.push('Bear Engulf');
+  if (pa.patterns.isHammer) pats.push('Hammer');
+  if (pa.patterns.isShootingStar) pats.push('Shooting Star');
+  if (pa.patterns.isInsideBar) pats.push('Inside Bar');
+  if (pa.patterns.isOutsideBar) pats.push('Outside Bar');
+  if (pa.patterns.isMomentum) pats.push('Momentum Expand');
+
+  html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--border-subtle);margin-top:4px;">
+    <span>CANDLE PATTERN:</span>
+    <span class="mono" style="color:var(--blue-text);">${pats.length ? pats.join(', ') : 'None'}</span>
+  </div>`;
+
+  grid.innerHTML = html;
 }
 
 function _appendPredictionHistory(resolved) {
@@ -1541,7 +2061,7 @@ function _renderHistoryTable() {
   const tbody = document.getElementById('ncHistoryBody');
   if (!tbody) return;
   if (!NC.predictionHistory.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="nc-table-empty">Awaiting first prediction cycle...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="nc-table-empty">Awaiting first prediction cycle...</td></tr>';
     return;
   }
   tbody.innerHTML = NC.predictionHistory.slice(0, 50).map(p => {
@@ -1551,8 +2071,17 @@ function _renderHistoryTable() {
     const resCls = !p.resolved ? 'result-pending' : p.correct ? 'result-correct' : 'result-wrong';
     const resText = !p.resolved ? '•' : p.correct ? '✓' : '✗';
     const pct = p.probability ? `${Math.round(Math.max(p.probability.up, p.probability.down) * 100)}%` : '—';
-    const spreadQ = p.spreadAssessment?.quality || 'NORMAL';
-    const regime = (p.regime || '—').replace('_', ' ');
+    const spreadQ = p.spreadAssessment?.quality || p.tickActivity?.spreadQuality || 'NORMAL';
+    const regime = (p.regimeData?.regime || p.regime || '—').replace(/_/g, ' ');
+
+    let ctx = '';
+    if (p.marketStructure?.liquidity?.hasSweep) ctx += '<span style="color:var(--yellow-text);" title="Liquidity Sweep">SWP</span> ';
+    if (p.regimeData?.regime?.includes('BREAKOUT')) ctx += '<span style="color:var(--blue-text);" title="Breakout">BRK</span> ';
+    if (p.marketStructure?.lastEvent?.includes('BOS')) ctx += '<span style="color:var(--text-primary);" title="Break of Structure">BOS</span> ';
+    if (p.marketStructure?.lastEvent?.includes('CHOCH')) ctx += '<span style="color:var(--text-primary);" title="Change of Character">CHoCH</span> ';
+    if (p.priceAction?.patterns?.isBullEngulf || p.priceAction?.patterns?.isBearEngulf) ctx += '<span style="color:var(--purple-text);" title="Engulfing Pattern">ENG</span> ';
+    if (!ctx) ctx = '<span style="color:var(--text-muted);">—</span>';
+
     return `<tr class="${!p.resolved ? 'nc-row-pending' : ''}">
       <td class="mono">${time}</td>
       <td>${p.pair || '—'}</td>
@@ -1562,7 +2091,8 @@ function _renderHistoryTable() {
       <td class="${actCls}">${p.actualDirection || '—'}</td>
       <td class="${resCls}">${resText}</td>
       <td>${spreadQ}</td>
-      <td class="mono">${regime}</td>
+      <td class="mono" style="font-size:9px;">${regime}</td>
+      <td class="mono" style="font-size:9px;">${ctx}</td>
     </tr>`;
   }).join('');
 }
