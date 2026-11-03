@@ -4,6 +4,7 @@
 // ============================================================
 
 import './styles.css';
+import './firebase.js';
 import { icon } from './icons.js';
 import { ASSET_DATABASE, getAssetData } from './data.js';
 import { renderOverview } from './pages/overview.js';
