@@ -15,6 +15,7 @@
 
 import { marketDataClient } from '../nextCandleClient.js';
 import { calculateTechnicalIndicators, evaluateTradingStrategies, generateNextCandlePrediction } from '../predictionEngine.js';
+import { predictionMonitorClient } from '../services/predictionMonitorClient.js';
 import { createChart, CandlestickSeries, LineSeries, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
 
 // ============================================================
@@ -1137,19 +1138,56 @@ function _onCandleClose(data) {
 function _onPrediction(data) {
   if (data.symbol !== NC.marketState.symbol || data.timeframe !== NC.marketState.selectedTimeframe) return;
 
+  const canonicalSym = data.symbol.replace(/[/_]/g, '');
+  const stepSec = (NC.marketState.selectedTimeframe === '5M' ? 300 : (NC.marketState.selectedTimeframe === '15M' ? 900 : (NC.marketState.selectedTimeframe === '30M' ? 1800 : 60)));
+  const targetStart = NC.marketState.currentCandleStart;
+  const targetEnd = NC.marketState.currentCandleEnd || (targetStart + stepSec);
+  const deterministicId = `${canonicalSym}_${data.timeframe}_${targetStart}_v4.0.0`;
+
   if (!data.prediction.id) {
-    data.prediction.id = 'pred_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    data.prediction.id = deterministicId;
     data.prediction.pair = data.symbol;
     data.prediction.timeframe = data.timeframe;
     data.prediction.predictionTimestamp = Date.now();
     data.prediction.resolved = false;
-    data.prediction.modelVersion = 'NCF-ENS-v3';
-    data.prediction.targetStart = NC.marketState.currentCandleStart;
-    data.prediction.targetEnd = NC.marketState.currentCandleEnd;
+    data.prediction.modelVersion = 'v4.0.0';
+    data.prediction.targetStart = targetStart;
+    data.prediction.targetEnd = targetEnd;
 
-    NC.predictionHistory.unshift(data.prediction);
-    if (NC.predictionHistory.length > 200) NC.predictionHistory.pop();
+    // Check if an unresolved prediction for this target boundary already exists to avoid duplicates
+    const existingIdx = NC.predictionHistory.findIndex(p => p.targetStart === data.prediction.targetStart && !p.resolved);
+    if (existingIdx !== -1) {
+      NC.predictionHistory[existingIdx] = { ...NC.predictionHistory[existingIdx], ...data.prediction };
+      data.prediction = NC.predictionHistory[existingIdx];
+    } else {
+      NC.predictionHistory.unshift(data.prediction);
+      if (NC.predictionHistory.length > 200) NC.predictionHistory.pop();
+    }
     _renderHistoryTable();
+
+    // Synchronize official prediction event with the shared Accuracy Monitor subsystem
+    if (typeof predictionMonitorClient?.publishOfficialPrediction === 'function') {
+      const hist = NC.historicalCandles[data.timeframe] || [];
+      const lastClosed = hist.length > 0 ? hist[hist.length - 1] : null;
+      predictionMonitorClient.publishOfficialPrediction({
+        predictionId: deterministicId,
+        symbol: data.symbol,
+        timeframe: data.timeframe,
+        direction: data.prediction.direction,
+        probability: data.prediction.probability || { up: 0.5, down: 0.5 },
+        edge: data.prediction.edge || 0,
+        predictionTime: data.prediction.predictionTimestamp || Date.now(),
+        cutoffCandleTime: lastClosed ? lastClosed.time : (targetStart - stepSec),
+        latestCompletedCandle: lastClosed,
+        targetCandle: {
+          startTime: targetStart,
+          endTime: targetEnd,
+        },
+        engineVersion: '4.0.0',
+        marketSource: 'Biquote',
+        dataQuality: 'VALID'
+      });
+    }
   }
 
   NC.prediction = data.prediction;
@@ -1441,20 +1479,36 @@ function _rolloverFormingCandle(candleStart, candleEnd) {
 
   let resolvedPrediction = null;
   if (NC.prediction && !NC.prediction.resolved) {
+    const isFlat = closedCandle.close === closedCandle.open;
     const actualDir = closedCandle.close > closedCandle.open ? 'UP' : (closedCandle.close < closedCandle.open ? 'DOWN' : 'FLAT');
-    const isCorrect = actualDir === NC.prediction.direction;
+    const isCorrect = !isFlat && actualDir === NC.prediction.direction;
     resolvedPrediction = {
       ...NC.prediction,
       actualDirection: actualDir,
       correct: isCorrect,
+      isFlat: isFlat,
       resolved: true,
       closePrice: closedCandle.close
     };
     NC.prediction.resolved = true;
 
-    const histPred = NC.predictionHistory.find(p => p.id === NC.prediction.id);
+    const histPred = NC.predictionHistory.find(p => p.id === NC.prediction.id || p.targetStart === NC.prediction.targetStart);
     if (histPred) {
       Object.assign(histPred, resolvedPrediction);
+    }
+
+    // Synchronize official outcome resolution with the shared Accuracy Monitor subsystem
+    if (typeof predictionMonitorClient?.publishOfficialOutcome === 'function') {
+      predictionMonitorClient.publishOfficialOutcome({
+        predictionId: NC.prediction.id,
+        symbol: NC.marketState.symbol,
+        timeframe: NC.marketState.selectedTimeframe,
+        actualDirection: actualDir,
+        evaluation: isFlat ? 'FLAT' : (isCorrect ? 'WIN' : 'LOSS'),
+        isCorrect: isCorrect,
+        targetCandle: closedCandle,
+        resolvedAt: Date.now()
+      });
     }
   }
 
@@ -2068,8 +2122,8 @@ function _renderHistoryTable() {
     const time = p.predictionTimestamp ? new Date(p.predictionTimestamp).toLocaleTimeString('en-US', { hour12: false }) : '—';
     const dirCls = p.direction === 'UP' ? 'bull' : 'bear';
     const actCls = p.actualDirection === 'UP' ? 'bull' : p.actualDirection === 'DOWN' ? 'bear' : '';
-    const resCls = !p.resolved ? 'result-pending' : p.correct ? 'result-correct' : 'result-wrong';
-    const resText = !p.resolved ? '•' : p.correct ? '✓' : '✗';
+    const resCls = !p.resolved ? 'result-pending' : p.actualDirection === 'FLAT' ? 'result-pending' : p.correct ? 'result-correct' : 'result-wrong';
+    const resText = !p.resolved ? '•' : p.actualDirection === 'FLAT' ? '— (PUSH)' : p.correct ? '✓' : '✗';
     const pct = p.probability ? `${Math.round(Math.max(p.probability.up, p.probability.down) * 100)}%` : '—';
     const spreadQ = p.spreadAssessment?.quality || p.tickActivity?.spreadQuality || 'NORMAL';
     const regime = (p.regimeData?.regime || p.regime || '—').replace(/_/g, ' ');
@@ -2099,16 +2153,23 @@ function _renderHistoryTable() {
 
 function _updatePerformanceStats() {
   const resolved = NC.predictionHistory.filter(p => p.resolved);
-  const n = resolved.length;
-  const correct = resolved.filter(p => p.correct).length;
-  $('ncSampleN', n.toString());
+  const directional = resolved.filter(p => p.actualDirection !== 'FLAT');
+  const n = directional.length;
+  const correct = directional.filter(p => p.correct).length;
+  const flats = resolved.filter(p => p.actualDirection === 'FLAT').length;
+  $('ncSampleN', resolved.length.toString());
   if (n >= 5) {
-    $('ncPrecision', (correct / n * 100).toFixed(1) + '%');
+    const prec = (correct / n * 100).toFixed(1);
+    $('ncPrecision', `${prec}%`);
   } else {
     $('ncPrecision', `N/A (${5 - n} more)`);
   }
   const statsEl = document.getElementById('ncHistStats');
-  if (statsEl) statsEl.textContent = n >= 5 ? `Precision: ${(correct / n * 100).toFixed(1)}% · N=${n}` : `N=${n}`;
+  if (statsEl) {
+    statsEl.textContent = n >= 5 
+      ? `Precision: ${(correct / n * 100).toFixed(1)}% · N=${resolved.length}${flats > 0 ? ` (${flats} flat)` : ''}` 
+      : `N=${resolved.length}`;
+  }
 }
 
 function _resetPredictionUI() {

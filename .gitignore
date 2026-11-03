@@ -27,4 +27,9 @@ dist-ssr
 
 # Local Netlify folder
 .netlify
-scratch.js
+scratch*.js
+
+# Test databases & temporary stores
+test_worker_health_db.json
+data/test_*.json
+*.tmp

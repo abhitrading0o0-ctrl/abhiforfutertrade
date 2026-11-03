@@ -31,6 +31,7 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
 
   const n = candles.length;
   const currentCandle = candles[n - 1];
+  const prevCandle = n > 1 ? candles[n - 2] : currentCandle;
   const currentPrice = currentCandle.close;
   const timeframe = options.timeframe || currentCandle.timeframe || '1M';
   const symbol = options.symbol || currentCandle.symbol || 'EUR/USD';
@@ -52,7 +53,7 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
   const emaSig = emaInd?.signal || 'WAIT';
 
   const atrInd = indMap.get('ATR (14)');
-  const atrVal = atrInd ? (parseFloat(atrInd.value) / 10000) : 0.0008;
+  const atrVal = atrInd ? (parseFloat(atrInd.value) / pipMult) : (0.0008 * 10000 / pipMult);
 
   const bbInd = indMap.get('Bollinger Bands (20, 2)');
   const stochInd = indMap.get('Stochastic (14, 3)');
@@ -116,38 +117,48 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
 
   // 1. Support Bounce ('Support/Resistance')
   const nearSup = supportResistance?.nearestSupport;
-  const isAtSup = nearSup && (nearSup.distance * pipMult) <= 3.5;
+  const isAtSup = nearSup && (nearSup.distance * pipMult) <= 3.0;
+  const approachedSupFromAbove = prevCandle.open >= (nearSup?.price || 0);
+  const heldAboveSup = currentCandle.close >= (nearSup?.price || 0) && currentCandle.low <= (nearSup?.price || 0) + (pipVal * 1.5);
+  const supRejectionConfirmed = heldAboveSup && (priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullEngulf || priceAction?.lowerWickPct >= 0.40);
+
   makeSignal({
     name: 'Support Bounce',
     category: 'Support/Resistance',
-    signal: isAtSup && priceAction?.isBullish && (priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullEngulf || priceAction?.lowerWickPct > 0.4)
+    signal: isAtSup && approachedSupFromAbove && supRejectionConfirmed
       ? 'BULLISH'
       : isAtSup ? 'WAIT' : 'NO VALIDATED SETUP',
-    status: isAtSup && priceAction?.isBullish
-      ? 'BULLISH SETUP — CONFIRMED'
+    status: isAtSup && approachedSupFromAbove && supRejectionConfirmed
+      ? 'BULLISH SETUP — SUPPORT DEFENSE CONFIRMED'
       : isAtSup ? 'BULLISH BIAS — WAIT FOR REJECTION WICK' : 'NO SETUP — Price not at support zone',
-    evidence: isAtSup ? `Price within ${(nearSup.distance * pipMult).toFixed(1)} pips of Support ${nearSup.price.toFixed(5)}` : 'Price not testing key support level',
-    conditionsMet: isAtSup ? ['Price at Support', ...(priceAction?.isBullish ? ['Bullish candle'] : [])] : [],
-    conditionsUnmet: !isAtSup ? ['Price at key support'] : [!priceAction?.isBullish ? 'Bullish rejection confirmation' : ''],
+    evidence: isAtSup ? `Price tested Support ${nearSup.price.toFixed(5)} with lower wick ${(priceAction?.lowerWickPct * 100).toFixed(0)}%` : 'Price not testing key support level',
+    qualityScore: supRejectionConfirmed ? 82 : 45,
+    conditionsMet: isAtSup && supRejectionConfirmed ? ['Support level tested', 'Rejection wick confirmed', 'Body closed above support'] : isAtSup ? ['Price at Support'] : [],
+    conditionsUnmet: !isAtSup ? ['Price at key support'] : [!supRejectionConfirmed ? 'Bullish rejection confirmation' : ''],
     relevantLevel: nearSup ? `Support ${nearSup.price.toFixed(5)}` : 'None',
     invalidation: nearSup ? `Below ${(nearSup.price - (pipVal * 2)).toFixed(5)}` : 'N/A'
   });
 
   // 2. Resistance Rejection ('Support/Resistance')
   const nearRes = supportResistance?.nearestResistance;
-  const isAtRes = nearRes && (nearRes.distance * pipMult) <= 3.5;
+  const isAtRes = nearRes && (nearRes.distance * pipMult) <= 3.0;
+  const approachedResFromBelow = prevCandle.open <= (nearRes?.price || 0);
+  const heldBelowRes = currentCandle.close <= (nearRes?.price || 0) && currentCandle.high >= (nearRes?.price || 0) - (pipVal * 1.5);
+  const resRejectionConfirmed = heldBelowRes && (priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearEngulf || priceAction?.upperWickPct >= 0.40);
+
   makeSignal({
     name: 'Resistance Rejection',
     category: 'Support/Resistance',
-    signal: isAtRes && priceAction?.isBearish && (priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearEngulf || priceAction?.upperWickPct > 0.4)
+    signal: isAtRes && approachedResFromBelow && resRejectionConfirmed
       ? 'BEARISH'
       : isAtRes ? 'WAIT' : 'NO VALIDATED SETUP',
-    status: isAtRes && priceAction?.isBearish
-      ? 'BEARISH SETUP — CONFIRMED'
+    status: isAtRes && approachedResFromBelow && resRejectionConfirmed
+      ? 'BEARISH SETUP — RESISTANCE DEFENSE CONFIRMED'
       : isAtRes ? 'BEARISH BIAS — WAIT FOR REJECTION WICK' : 'NO SETUP — Price not at resistance zone',
-    evidence: isAtRes ? `Price within ${(nearRes.distance * pipMult).toFixed(1)} pips of Resistance ${nearRes.price.toFixed(5)}` : 'Price not testing key resistance level',
-    conditionsMet: isAtRes ? ['Price at Resistance', ...(priceAction?.isBearish ? ['Bearish candle'] : [])] : [],
-    conditionsUnmet: !isAtRes ? ['Price at key resistance'] : [!priceAction?.isBearish ? 'Bearish rejection confirmation' : ''],
+    evidence: isAtRes ? `Price tested Resistance ${nearRes.price.toFixed(5)} with upper wick ${(priceAction?.upperWickPct * 100).toFixed(0)}%` : 'Price not testing key resistance level',
+    qualityScore: resRejectionConfirmed ? 82 : 45,
+    conditionsMet: isAtRes && resRejectionConfirmed ? ['Resistance level tested', 'Rejection wick confirmed', 'Body closed below resistance'] : isAtRes ? ['Price at Resistance'] : [],
+    conditionsUnmet: !isAtRes ? ['Price at key resistance'] : [!resRejectionConfirmed ? 'Bearish rejection confirmation' : ''],
     relevantLevel: nearRes ? `Resistance ${nearRes.price.toFixed(5)}` : 'None',
     invalidation: nearRes ? `Above ${(nearRes.price + (pipVal * 2)).toFixed(5)}` : 'N/A'
   });
@@ -221,14 +232,17 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
 
   // 8. Trend Pullback ('Trend Following')
   const structTrend = marketStructure?.trend;
+  const isPullbackEndBull = structTrend === 'BULLISH' && emaSig === 'BULLISH' && priceAction?.isBullish && (prevCandle.close <= prevCandle.open || priceAction?.lowerWickPct >= 0.35);
+  const isPullbackEndBear = structTrend === 'BEARISH' && emaSig === 'BEARISH' && priceAction?.isBearish && (prevCandle.close >= prevCandle.open || priceAction?.upperWickPct >= 0.35);
   makeSignal({
     name: 'Trend Pullback',
     category: 'Trend Following',
-    signal: structTrend === 'BULLISH' && (priceAction?.isBearish || currentPrice <= currentCandle.open) && emaSig === 'BULLISH' ? 'BULLISH' : structTrend === 'BEARISH' && (priceAction?.isBullish || currentPrice >= currentCandle.open) && emaSig === 'BEARISH' ? 'BEARISH' : structTrend !== 'RANGE' ? 'WAIT' : 'NO VALIDATED SETUP',
-    status: structTrend === 'BULLISH' ? 'BULLISH SETUP — PULLBACK IN UPTREND' : structTrend === 'BEARISH' ? 'BEARISH SETUP — PULLBACK IN DOWNTREND' : 'NO SETUP — No clear directional trend',
+    signal: isPullbackEndBull ? 'BULLISH' : isPullbackEndBear ? 'BEARISH' : structTrend !== 'RANGE' ? 'WAIT' : 'NO VALIDATED SETUP',
+    status: isPullbackEndBull ? 'BULLISH SETUP — PULLBACK RESOLVED' : isPullbackEndBear ? 'BEARISH SETUP — PULLBACK RESOLVED' : 'WAIT — Retracement underway',
     evidence: structTrend !== 'RANGE' ? `Structural trend is ${structTrend}; trading with macro flow` : 'Market is choppy without directional trend',
-    conditionsMet: structTrend !== 'RANGE' ? ['Established structural trend', 'Controlled retracement'] : [],
-    conditionsUnmet: structTrend === 'RANGE' ? ['Confirmed trend direction'] : []
+    qualityScore: 84,
+    conditionsMet: (isPullbackEndBull || isPullbackEndBear) ? ['Established structural trend', 'Pullback rejection confirmation'] : [],
+    conditionsUnmet: !(isPullbackEndBull || isPullbackEndBear) ? ['Turnaround candle confirmation'] : []
   });
 
   // 9. Momentum Continuation ('Momentum')
@@ -244,14 +258,15 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
   });
 
   // 10. Confirmed RSI Divergence ('Momentum')
-  const rsiDivBull = rsiVal < 35 && priceAction?.patterns?.isBullEngulf;
-  const rsiDivBear = rsiVal > 65 && priceAction?.patterns?.isBearEngulf;
+  const rsiDivBull = rsiVal <= 38 && (priceAction?.patterns?.isBullEngulf || priceAction?.patterns?.isHammer || (priceAction?.isBullish && priceAction?.lowerWickPct >= 0.35));
+  const rsiDivBear = rsiVal >= 62 && (priceAction?.patterns?.isBearEngulf || priceAction?.patterns?.isShootingStar || (priceAction?.isBearish && priceAction?.upperWickPct >= 0.35));
   makeSignal({
     name: 'Confirmed RSI Divergence',
     category: 'Momentum',
     signal: rsiDivBull ? 'BULLISH' : rsiDivBear ? 'BEARISH' : 'WAIT',
     status: rsiDivBull ? 'BULLISH SETUP — OVERSOLD DIVERGENCE' : rsiDivBear ? 'BEARISH SETUP — OVERBOUGHT DIVERGENCE' : 'WAIT — No divergence pattern confirmed',
     evidence: `Current RSI is ${rsiVal.toFixed(1)}; evaluating swing divergence`,
+    qualityScore: 80,
     conditionsMet: (rsiDivBull || rsiDivBear) ? ['RSI extreme', 'Reversal price pattern'] : [],
     conditionsUnmet: !(rsiDivBull || rsiDivBear) ? ['Confirmed divergence confirmation'] : []
   });
@@ -282,36 +297,43 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
   });
 
   // 13. Volatility Regime Transition ('Volatility')
-  const isVolHigh = regimeData?.volatilityState?.includes('HIGH');
+  const isVolHigh = regimeData?.volatilityState?.includes('HIGH') || (currentCandle.high - currentCandle.low) >= (atrVal * 1.4);
   makeSignal({
     name: 'Volatility Regime Transition',
     category: 'Volatility',
     signal: isVolHigh && priceAction?.isBullish ? 'BULLISH' : isVolHigh && priceAction?.isBearish ? 'BEARISH' : 'WAIT',
     status: isVolHigh ? `${priceAction?.isBullish ? 'BULLISH' : 'BEARISH'} BIAS — HIGH VOLATILITY REGIME` : 'WAIT — Volatility within standard boundaries',
     evidence: `Volatility state: ${regimeData?.volatilityState || 'NORMAL'}`,
+    qualityScore: 78,
     conditionsMet: isVolHigh ? ['Elevated volatility detected'] : [],
     conditionsUnmet: !isVolHigh ? ['High volatility regime transition'] : []
   });
 
   // 14. Candle Rejection Strategy ('Candlestick/Price Action')
+  const candleRange = currentCandle.high - currentCandle.low;
+  const isSignificantRange = candleRange >= (atrVal * 0.70);
+  const bullWickAtLevel = isSignificantRange && priceAction?.lowerWickPct >= 0.45 && (isAtSup || isSweepLow || (nearSup && (nearSup.distance * pipMult) <= 3.5));
+  const bearWickAtLevel = isSignificantRange && priceAction?.upperWickPct >= 0.45 && (isAtRes || isSweepHigh || (nearRes && (nearRes.distance * pipMult) <= 3.5));
   makeSignal({
     name: 'Candle Rejection Strategy',
     category: 'Candlestick/Price Action',
-    signal: priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullishRejection ? 'BULLISH' : priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearishRejection ? 'BEARISH' : 'WAIT',
-    status: (priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullishRejection) ? 'BULLISH SETUP — REJECTION CONFIRMED' : (priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearishRejection) ? 'BEARISH SETUP — REJECTION CONFIRMED' : 'WAIT — No prominent rejection wick',
+    signal: bullWickAtLevel ? 'BULLISH' : bearWickAtLevel ? 'BEARISH' : 'WAIT',
+    status: bullWickAtLevel ? 'BULLISH SETUP — REJECTION CONFIRMED' : bearWickAtLevel ? 'BEARISH SETUP — REJECTION CONFIRMED' : 'WAIT — No prominent rejection wick at level',
     evidence: `Lower wick: ${(priceAction?.lowerWickPct * 100).toFixed(0)}%, Upper wick: ${(priceAction?.upperWickPct * 100).toFixed(0)}%`,
-    conditionsMet: (priceAction?.patterns?.isHammer || priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBullishRejection || priceAction?.patterns?.isBearishRejection) ? ['Significant wick-to-body proportion'] : [],
-    conditionsUnmet: !(priceAction?.patterns?.isHammer || priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBullishRejection || priceAction?.patterns?.isBearishRejection) ? ['Strong rejection candle formation'] : []
+    qualityScore: 80,
+    conditionsMet: (bullWickAtLevel || bearWickAtLevel) ? ['Significant wick-to-body proportion at key level'] : [],
+    conditionsUnmet: !(bullWickAtLevel || bearWickAtLevel) ? ['Strong rejection candle at level'] : []
   });
 
   // 15. Tick-Activity Confirmation ('Tick Activity')
-  const isHighTick = tickActivity?.activityLevel?.includes('HIGH');
+  const isHighTick = tickActivity?.activityLevel?.includes('HIGH') || (currentCandle.volume && currentCandle.volume > 120);
   makeSignal({
     name: 'Tick-Activity Confirmation',
     category: 'Tick Activity',
     signal: isHighTick && priceAction?.isBullish ? 'BULLISH' : isHighTick && priceAction?.isBearish ? 'BEARISH' : 'WAIT',
     status: isHighTick ? `${priceAction?.isBullish ? 'BULLISH' : 'BEARISH'} SETUP — VOLUME ACCELERATION` : 'WAIT — Normal tick activity',
     evidence: `Tick activity: ${tickActivity?.activityLevel || 'NORMAL'}`,
+    qualityScore: 78,
     conditionsMet: isHighTick ? ['Above-average tick velocity'] : [],
     conditionsUnmet: !isHighTick ? ['Unusually high tick participation'] : []
   });
@@ -375,25 +397,35 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
   });
 
   // 20. Pivot-Point Rejection ('Support/Resistance')
-  const pivotPoint = +((currentCandle.high + currentCandle.low + currentCandle.close) / 3).toFixed(5);
-  const isAtPivot = Math.abs(currentPrice - pivotPoint) < (pipVal * 2);
+  const pivotSlice = candles.slice(Math.max(0, n - 26), n - 1);
+  const pHigh = pivotSlice.length > 0 ? Math.max(...pivotSlice.map(c => c.high)) : currentCandle.high;
+  const pLow = pivotSlice.length > 0 ? Math.min(...pivotSlice.map(c => c.low)) : currentCandle.low;
+  const pClose = pivotSlice.length > 0 ? pivotSlice[pivotSlice.length - 1].close : currentCandle.close;
+  const pivotPoint = +((pHigh + pLow + pClose) / 3).toFixed(5);
+  const distToPivot = Math.abs(currentPrice - pivotPoint) * pipMult;
+  const isAtPivot = distToPivot <= 1.5;
+  const pivotBounceBull = isAtPivot && prevCandle.close >= pivotPoint && priceAction?.isBullish && priceAction?.lowerWickPct >= 0.35;
+  const pivotRejectBear = isAtPivot && prevCandle.close <= pivotPoint && priceAction?.isBearish && priceAction?.upperWickPct >= 0.35;
+
   makeSignal({
     name: 'Pivot-Point Rejection',
     category: 'Support/Resistance',
-    signal: isAtPivot && priceAction?.isBullish ? 'BULLISH' : isAtPivot && priceAction?.isBearish ? 'BEARISH' : 'WAIT',
-    status: isAtPivot ? `${priceAction?.isBullish ? 'BULLISH' : 'BEARISH'} SETUP — PIVOT REACTION` : 'WAIT — Away from central pivot reference',
-    evidence: `Central Pivot calculated at ${pivotPoint.toFixed(5)}`,
-    conditionsMet: isAtPivot ? ['Price at Central Pivot'] : [],
-    conditionsUnmet: !isAtPivot ? ['Central Pivot retest'] : []
+    signal: pivotBounceBull ? 'BULLISH' : pivotRejectBear ? 'BEARISH' : 'WAIT',
+    status: pivotBounceBull ? 'BULLISH SETUP — PIVOT BOUNCE CONFIRMED' : pivotRejectBear ? 'BEARISH SETUP — PIVOT REJECTION CONFIRMED' : 'WAIT — Away from confirmed pivot level',
+    evidence: `Central Pivot calculated at ${pivotPoint.toFixed(5)}; distance: ${distToPivot.toFixed(1)} pips`,
+    qualityScore: pivotBounceBull || pivotRejectBear ? 82 : 40,
+    conditionsMet: pivotBounceBull || pivotRejectBear ? ['Price tested Central Pivot', 'Rejection wick confirmed'] : isAtPivot ? ['Price at Central Pivot'] : [],
+    conditionsUnmet: !(pivotBounceBull || pivotRejectBear) ? ['Confirmed rejection at Central Pivot'] : []
   });
 
   // 21. Range Boundary Reversal ('Mean Reversion')
   makeSignal({
     name: 'Range Boundary Reversal',
     category: 'Mean Reversion',
-    signal: isRange && (nearSup?.distance * pipMult) < 3.5 && (priceAction?.patterns?.isHammer || priceAction?.isBullish) ? 'BULLISH' : isRange && (nearRes?.distance * pipMult) < 3.5 && (priceAction?.patterns?.isShootingStar || priceAction?.isBearish) ? 'BEARISH' : isRange ? 'WAIT' : 'NO VALIDATED SETUP',
-    status: isRange && (nearSup?.distance * pipMult) < 3.5 ? 'BULLISH SETUP — RANGE LOW REVERSAL' : isRange && (nearRes?.distance * pipMult) < 3.5 ? 'BEARISH SETUP — RANGE HIGH REVERSAL' : 'NO SETUP — Awaiting test of range edge',
+    signal: isRange && (nearSup?.distance * pipMult) < 3.0 && heldAboveSup && (priceAction?.patterns?.isHammer || priceAction?.isBullish) ? 'BULLISH' : isRange && (nearRes?.distance * pipMult) < 3.0 && heldBelowRes && (priceAction?.patterns?.isShootingStar || priceAction?.isBearish) ? 'BEARISH' : isRange ? 'WAIT' : 'NO VALIDATED SETUP',
+    status: isRange && (nearSup?.distance * pipMult) < 3.0 ? 'BULLISH SETUP — RANGE LOW REVERSAL' : isRange && (nearRes?.distance * pipMult) < 3.0 ? 'BEARISH SETUP — RANGE HIGH REVERSAL' : 'NO SETUP — Awaiting test of range edge',
     evidence: isRange ? 'Price rotating near range boundary' : 'Market trending',
+    qualityScore: 80,
     conditionsMet: isRange ? ['Confirmed range regime'] : [],
     conditionsUnmet: !isRange ? ['Range regime condition'] : ['Range boundary interaction']
   });
@@ -405,19 +437,21 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
     signal: isSweepHigh && priceAction?.isBearish ? 'BEARISH' : isSweepLow && priceAction?.isBullish ? 'BULLISH' : 'WAIT',
     status: (isSweepHigh && priceAction?.isBearish) ? 'BEARISH SETUP — FADING FAILED HIGH' : (isSweepLow && priceAction?.isBullish) ? 'BULLISH SETUP — FADING FAILED LOW' : 'WAIT — No failed breakout in progress',
     evidence: isSweepHigh || isSweepLow ? 'Attempted expansion failed and reclaimed range' : 'No trapped moves observed',
+    qualityScore: 82,
     conditionsMet: (isSweepHigh || isSweepLow) ? ['Failed expansion reclaim'] : [],
     conditionsUnmet: !(isSweepHigh || isSweepLow) ? ['Failed breakout trigger'] : []
   });
 
   // 23. ATR-Normalized Momentum ('Momentum')
   const roc12 = indMap.get('Rate of Change (12)')?.signal;
-  const isAtrNormal = atrVal >= (pipVal * 4);
+  const isAtrNormal = (atrVal * pipMult) >= 3.0;
   makeSignal({
     name: 'ATR-Normalized Momentum',
     category: 'Momentum',
-    signal: roc12 === 'BULLISH' && isAtrNormal ? 'BULLISH' : roc12 === 'BEARISH' && isAtrNormal ? 'BEARISH' : 'WAIT',
+    signal: roc12 === 'BULLISH' && isAtrNormal && priceAction?.isBullish ? 'BULLISH' : roc12 === 'BEARISH' && isAtrNormal && priceAction?.isBearish ? 'BEARISH' : 'WAIT',
     status: (roc12 === 'BULLISH' || roc12 === 'BEARISH') && isAtrNormal ? `${roc12} SETUP — ATR MOMENTUM EXPANSION` : 'WAIT — Low true range expansion',
     evidence: `ATR: ${(atrVal * pipMult).toFixed(1)} pips; ROC signal: ${roc12 || 'WAIT'}`,
+    qualityScore: 78,
     conditionsMet: isAtrNormal ? ['Sufficient ATR expansion threshold'] : [],
     conditionsUnmet: !isAtrNormal ? ['Minimum ATR volatility threshold'] : []
   });
@@ -629,15 +663,16 @@ export function evaluateAllStrategies(candles, indicators = [], ms = null, pa = 
   });
 
   // M1 S13: M1 Momentum Exhaustion Reversal
-  // Extended run (RSI > 75 or < 25), followed by climactic rejection wick and structural failure
-  const isExhaustionBull = rsiVal < 25 && (priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullEngulf);
-  const isExhaustionBear = rsiVal > 75 && (priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearEngulf);
+  // Extended run (RSI > 70 or < 30), followed by climactic rejection wick and structural failure
+  const isExhaustionBull = rsiVal <= 32 && (priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullEngulf || priceAction?.lowerWickPct >= 0.40);
+  const isExhaustionBear = rsiVal >= 68 && (priceAction?.patterns?.isShootingStar || priceAction?.patterns?.isBearEngulf || priceAction?.upperWickPct >= 0.40);
   makeSignal({
     name: 'M1 Momentum Exhaustion Reversal',
     category: 'M1 SCALPING STRATEGIES',
-    signal: isExhaustionBull ? 'BULLISH' : isExhaustionBear ? 'BEARISH' : (rsiVal > 75 || rsiVal < 25) ? 'WAIT' : 'NO VALIDATED SETUP',
-    status: isExhaustionBull ? 'BULLISH SETUP — OVERSOLD EXHAUSTION REVERSAL' : isExhaustionBear ? 'BEARISH SETUP — OVERBOUGHT EXHAUSTION REVERSAL' : (rsiVal > 75 || rsiVal < 25) ? 'WAIT — RSI climactic; awaiting structural rejection candle' : 'NO SETUP — RSI within normal boundaries',
+    signal: isExhaustionBull ? 'BULLISH' : isExhaustionBear ? 'BEARISH' : (rsiVal >= 68 || rsiVal <= 32) ? 'WAIT' : 'NO VALIDATED SETUP',
+    status: isExhaustionBull ? 'BULLISH SETUP — OVERSOLD EXHAUSTION REVERSAL' : isExhaustionBear ? 'BEARISH SETUP — OVERBOUGHT EXHAUSTION REVERSAL' : (rsiVal >= 68 || rsiVal <= 32) ? 'WAIT — RSI climactic; awaiting structural rejection candle' : 'NO SETUP — RSI within normal boundaries',
     evidence: `RSI is ${rsiVal.toFixed(1)} with pattern: ${priceAction?.signal}`,
+    qualityScore: 82,
     conditionsMet: isExhaustionBull || isExhaustionBear ? ['Climactic momentum reading', 'Reversal rejection candle'] : [],
     conditionsUnmet: !(isExhaustionBull || isExhaustionBear) ? ['Reversal rejection trigger candle'] : []
   });

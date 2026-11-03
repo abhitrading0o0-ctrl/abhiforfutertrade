@@ -40,9 +40,9 @@ export function analyzeMarketRegime(candles, indicators) {
   let regime = 'RANGE_BOUND';
   let volatilityState = 'NORMAL';
 
-  if (bbWidth > 0.0025 || realizedVol > 0.0005) {
+  if (bbWidth > 0.0018 || realizedVol > 0.00022) {
     volatilityState = 'HIGH';
-  } else if (bbWidth < 0.001 || realizedVol < 0.00015) {
+  } else if (bbWidth < 0.0007 || realizedVol < 0.00008) {
     volatilityState = 'LOW (COMPRESSION)';
   }
 

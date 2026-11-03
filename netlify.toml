@@ -3,6 +3,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[functions]
+  included_files = ["data/**"]
+
 [[redirects]]
   from = "/api/market/*"
   to = "/.netlify/functions/market"
@@ -11,6 +14,11 @@
 [[redirects]]
   from = "/api/next-candle/*"
   to = "/.netlify/functions/next-candle"
+  status = 200
+
+[[redirects]]
+  from = "/api/monitor/*"
+  to = "/.netlify/functions/monitor"
   status = 200
 
 [[redirects]]

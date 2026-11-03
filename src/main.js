@@ -21,6 +21,7 @@ import { renderWatchlist } from './pages/watchlist.js';
 import { renderSettings } from './pages/settings.js';
 import { initCharts } from './chartEngine.js';
 import { renderNextCandle, initNextCandlePage } from './pages/nextcandle.js';
+import { renderAccuracyMonitor, initAccuracyMonitor } from './pages/accuracyMonitor.js';
 import { marketDataClient } from './marketDataClient.js';
 
 // Connect market data client on load (server may not be running, but try)
@@ -70,6 +71,7 @@ const navItems = [
   { id: 'technical', label: 'Technical Analysis', icon: 'technical', section: 'ANALYSIS' },
   { id: 'strategy', label: 'Strategy Analysis', icon: 'strategy', section: 'ANALYSIS' },
   { id: 'nextcandle', label: 'Next Candle', icon: 'zap', section: 'ANALYSIS' },
+  { id: 'accuracymonitor', label: 'Accuracy Monitor', icon: 'layers', section: 'ANALYSIS' },
   { id: 'news', label: 'News & Events', icon: 'news', section: 'RESEARCH' },
   { id: 'fundamentals', label: 'Fundamentals', icon: 'fundamentals', section: 'RESEARCH' },
   { id: 'statistics', label: 'Statistics', icon: 'statistics', section: 'RESEARCH' },
@@ -325,6 +327,7 @@ function renderPage() {
     technical: renderTechnical,
     strategy: renderStrategy,
     nextcandle: renderNextCandle,
+    accuracymonitor: renderAccuracyMonitor,
     news: renderNews,
     fundamentals: renderFundamentals,
     statistics: renderStatistics,
@@ -361,6 +364,11 @@ function initPageScripts(page) {
   // Initialize Markets page controls (Heatmap / Table / Performance views, Period & Sort)
   if (page === 'markets') {
     setupMarketsControls();
+  }
+
+  // Initialize Accuracy Monitor background client & controls
+  if (page === 'accuracymonitor') {
+    initAccuracyMonitor();
   }
 }
 

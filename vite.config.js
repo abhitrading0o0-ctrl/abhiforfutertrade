@@ -56,6 +56,12 @@ export default defineConfig(({ mode }) => {
   ],
   server: {
     port: 5173,
+    proxy: {
+      '/api/monitor': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
   };
 });

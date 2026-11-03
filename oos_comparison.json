@@ -1,0 +1,42 @@
+{
+  "origInSample": {
+    "total": 795,
+    "correct": 458,
+    "winRate": 57.61,
+    "bullWinRate": 66.75,
+    "bearWinRate": 47.33,
+    "brier": 0.2522,
+    "highEdgeTotal": 564,
+    "highEdgeWinRate": 59.93
+  },
+  "imprInSample": {
+    "total": 795,
+    "correct": 457,
+    "winRate": 57.48,
+    "bullWinRate": 65.91,
+    "bearWinRate": 47.04,
+    "brier": 0.2572,
+    "highEdgeTotal": 516,
+    "highEdgeWinRate": 59.69
+  },
+  "origOOS": {
+    "total": 594,
+    "correct": 327,
+    "winRate": 55.05,
+    "bullWinRate": 65.17,
+    "bearWinRate": 42.15,
+    "brier": 0.265,
+    "highEdgeTotal": 426,
+    "highEdgeWinRate": 56.1
+  },
+  "imprOOS": {
+    "total": 594,
+    "correct": 311,
+    "winRate": 52.36,
+    "bullWinRate": 62.11,
+    "bearWinRate": 38.27,
+    "brier": 0.2672,
+    "highEdgeTotal": 374,
+    "highEdgeWinRate": 56.15
+  }
+}

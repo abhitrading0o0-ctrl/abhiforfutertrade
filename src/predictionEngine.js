@@ -210,23 +210,39 @@ export function generateNextCandlePrediction(candles, indicators = [], strategie
     evaluatedStrats = evaluateTradingStrategies(candles, evaluatedIndicators, marketStructure, priceAction, regimeData, tickActivity, supportResistance, orderBlocks, { symbol, timeframe });
   }
 
-  // Count actionable confirmations across independent families
+  // Count actionable confirmations across independent families with quality weighting
   let bullStratCount = 0;
   let bearStratCount = 0;
+  let weightedBullScore = 0;
+  let weightedBearScore = 0;
   for (const s of evaluatedStrats) {
-    if (s.signal === 'BULLISH') bullStratCount++;
-    else if (s.signal === 'BEARISH') bearStratCount++;
+    const q = (s.qualityScore || 70) / 100;
+    if (s.signal === 'BULLISH') {
+      bullStratCount++;
+      weightedBullScore += q;
+    } else if (s.signal === 'BEARISH') {
+      bearStratCount++;
+      weightedBearScore += q;
+    }
   }
 
   // Feature Extraction
-  const rsiVal = parseFloat(indicators.find(i => i.name.startsWith('RSI'))?.value || '50');
+  const rsiVal = parseFloat(evaluatedIndicators.find(i => i.name.startsWith('RSI'))?.value || '50');
   const msSignal = marketStructure?.trend === 'BULLISH' ? 1 : marketStructure?.trend === 'BEARISH' ? -1 : 0;
   const paSignal = priceAction?.signal === 'BULLISH' ? 1 : priceAction?.signal === 'BEARISH' ? -1 : 0;
   const hasConflict = msSignal !== 0 && paSignal !== 0 && msSignal !== paSignal;
   const hasAlignment = msSignal !== 0 && msSignal === paSignal;
 
-  const atSupport = supportResistance?.nearestSupport?.distance * pipMult < 1.5;
-  const atResistance = supportResistance?.nearestResistance?.distance * pipMult < 1.5;
+  const nearSup = supportResistance?.nearestSupport;
+  const nearRes = supportResistance?.nearestResistance;
+  const atSupport = nearSup && (nearSup.distance * pipMult) < 2.0;
+  const atResistance = nearRes && (nearRes.distance * pipMult) < 2.0;
+
+  // Streak exhaustion detection
+  const bullStreak = candles.slice(-5).filter(c => c.close > c.open).length;
+  const bearStreak = candles.slice(-5).filter(c => c.close < c.open).length;
+  const isOverextendedBull = bullStreak >= 4;
+  const isOverextendedBear = bearStreak >= 4;
 
   const features = {
     emaAligned: bullStratCount > bearStratCount ? 1 : bullStratCount < bearStratCount ? -1 : 0,
@@ -243,6 +259,8 @@ export function generateNextCandlePrediction(candles, indicators = [], strategie
     isRangeBound: regimeData?.regime === 'RANGE_BOUND' || regimeData?.regime === 'CONSOLIDATING',
     atSupport,
     atResistance,
+    isOverextendedBull,
+    isOverextendedBear,
     engulfingBull: priceAction?.patterns?.isBullEngulf || false,
     engulfingBear: priceAction?.patterns?.isBearEngulf || false,
     pinBarBull: priceAction?.patterns?.isHammer || priceAction?.patterns?.isBullishRejection || false,
@@ -255,20 +273,20 @@ export function generateNextCandlePrediction(candles, indicators = [], strategie
   let logit = 0;
   const w = {
     emaAligned: 0.15,
-    rsiMom: 0.12,
+    rsiMom: 0.14,
     bodyDir: 0.05,
     zScore: -0.10,
-    alignment: 0.12,
+    alignment: 0.14,
     breakoutTick: 0.18,
-    supportBounce: 0.25,
-    resistanceReject: -0.25,
-    paBull: 0.15,
-    paBear: -0.15,
+    supportBounce: 0.28,
+    resistanceReject: -0.28,
+    paBull: 0.18,
+    paBear: -0.18,
   };
 
-  // Dampen overlapping strategies to avoid overconfidence
-  const stratLogit = (bullStratCount - bearStratCount) * 0.04;
-  logit += Math.max(-0.5, Math.min(0.5, stratLogit));
+  // Quality-weighted strategy evidence aggregation
+  const netStratScore = weightedBullScore - weightedBearScore;
+  logit += Math.max(-0.6, Math.min(0.6, netStratScore * 0.12));
 
   // Trend & Momentum
   logit += features.emaAligned * w.emaAligned;
@@ -280,13 +298,9 @@ export function generateNextCandlePrediction(candles, indicators = [], strategie
   if (features.engulfingBull || features.pinBarBull) logit += w.paBull;
   if (features.engulfingBear || features.pinBarBear) logit += w.paBear;
 
-  // Statistics & Mean Reversion
-  if (features.zScore > 2) logit += w.zScore;
-  else if (features.zScore < -2) logit -= w.zScore;
-
   // Confluence & Conflict Dampening
   if (features.hasConflict) {
-    logit *= 0.5;
+    logit *= 0.45;
   } else if (features.hasAlignment) {
     logit += features.alignDirection * w.alignment;
   }
@@ -301,12 +315,28 @@ export function generateNextCandlePrediction(candles, indicators = [], strategie
     logit *= 0.65;
   }
 
-  // Support & Resistance
-  if (features.atSupport) logit += w.supportBounce;
-  if (features.atResistance) logit += w.resistanceReject;
+  // Support & Resistance: Defense vs Penetration (fixes #1 failure mode)
+  if (atSupport) {
+    if (priceAction?.isBullish || priceAction?.lowerWickPct >= 0.40) {
+      logit += w.supportBounce;
+    } else if (priceAction?.isBearish && last.close < nearSup.price) {
+      logit -= 0.22; // Momentum breakdown penetration
+    }
+  }
+  if (atResistance) {
+    if (priceAction?.isBearish || priceAction?.upperWickPct >= 0.40) {
+      logit += w.resistanceReject;
+    } else if (priceAction?.isBullish && last.close > nearRes.price) {
+      logit += 0.22; // Momentum breakout penetration
+    }
+  }
+
+  // Overextended Move Exhaustion (fixes #2 failure mode)
+  if (isOverextendedBull) logit -= 0.22;
+  if (isOverextendedBear) logit += 0.22;
 
   // Probability Calibration using Sigmoid
-  let probUp = 1 / (1 + Math.exp(-logit));
+  let probUp = 1 / (1 + Math.exp(-logit * 1.35));
   probUp = Math.max(0.18, Math.min(0.82, probUp));
   const probDown = +(1 - probUp).toFixed(4);
   probUp = +probUp.toFixed(4);
